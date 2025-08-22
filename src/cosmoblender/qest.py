@@ -6,7 +6,7 @@ import pickle
 from . import tools as tls
 import sys
 # TODO: install BasicILC
-sys.path.insert(0, '/Users/antonbaleatolizancos/Software/BasicILC/')
+sys.path.insert(0, '/home/ce425/rds/rds-dirac-dp002/ce425/ksz_biases/BasicILC/')
 import cmb_ilc
 import concurrent
 from scipy.special import roots_legendre

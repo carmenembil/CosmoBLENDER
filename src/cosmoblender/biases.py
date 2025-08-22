@@ -24,7 +24,7 @@ class Hm_minimal:
                 "ms_rescaled": hm_full.ms_rescaled, "zs": hm_full.hcos.zs, "ks": hm_full.hcos.ks,
                 "comoving_radial_distance": hm_full.hcos.comoving_radial_distance(hm_full.hcos.zs),
                 "uk_profiles": hm_full.hcos.uk_profiles, "pk_profiles": hm_full.hcos.pk_profiles,
-                "p": hm_full.hcos.p, "bh_ofM": hm_full.hcos.bh_ofM, "lmax_out": hm_full.lmax_out,
+                "p": hm_full.hcos.p, "bh": hm_full.hcos.bh, "lmax_out": hm_full.lmax_out,
                 "y_consistency": hm_full.y_consistency, "g_consistency": hm_full.g_consistency,
                 "I_consistency": hm_full.I_consistency, "Pzk": hm_full.hcos.Pzk, "nMasses": hm_full.nMasses,
                 "nZs": hm_full.nZs, "hods":hm_full.hcos.hods, "CIB_satellite_filter":hm_full.CIB_satellite_filter,
@@ -108,7 +108,7 @@ class hm_framework:
         """
         mMask = np.ones(self.nMasses)
         mMask[exp.massCut<self.hcos.ms]=0
-        I = np.trapz(self.hcos.nzm*self.hcos.bh_ofM*self.hcos.ms/self.hcos.rho_matter_z(0)*mMask,self.hcos.ms, axis=-1)
+        I = np.trapz(self.hcos.nzm*self.hcos.bh*self.hcos.ms/self.hcos.rho_matter_z(0)*mMask,self.hcos.ms, axis=-1)
         self.m_consistency = 1 - I # A function of z
 
     def get_galaxy_consistency(self, exp, survey_name, lmax_proj=None):
@@ -127,7 +127,7 @@ class hm_framework:
                                         ellmax=lmax_proj) # A function of z and k
         mMask = np.ones(self.nMasses)
         mMask[exp.massCut<self.hcos.ms]=0
-        I = np.trapz(self.hcos.nzm*self.hcos.bh_ofM*self.hcos.ms/self.hcos.rho_matter_z(0)*mMask,self.hcos.ms, axis=-1)
+        I = np.trapz(self.hcos.nzm*self.hcos.bh*self.hcos.ms/self.hcos.rho_matter_z(0)*mMask,self.hcos.ms, axis=-1)
         W_of_Mlow = (self.hcos.hods[survey_name]['Nc'][:, 0] + self.hcos.hods[survey_name]['Ns'][:, 0])[:,None]\
                     / self.hcos.hods[survey_name]['ngal'][:,None] * ugal_proj_of_Mlow # A function of z and k
         self.g_consistency = ((1 - I)/(self.hcos.ms[0]/self.hcos.rho_matter_z(0)))[:,None]*W_of_Mlow #Function of z & k
@@ -152,7 +152,7 @@ class hm_framework:
                                                    ellmax=lmax_proj)  # A function of z and k
         mMask = np.ones(self.nMasses)
         mMask[exp.massCut < self.hcos.ms] = 0
-        I = np.trapz(self.hcos.nzm * self.hcos.bh_ofM * self.hcos.ms / self.hcos.rho_matter_z(0) * mMask, self.hcos.ms,
+        I = np.trapz(self.hcos.nzm * self.hcos.bh * self.hcos.ms / self.hcos.rho_matter_z(0) * mMask, self.hcos.ms,
                      axis=-1)
         self.y_consistency = ((1 - I) / (self.hcos.ms[0] / self.hcos.rho_matter_z(0)))[:,None] * W_of_Mlow
 
@@ -175,7 +175,7 @@ class hm_framework:
             ucen_plus_usat_of_Mlow[i, :] = u_cen + u_sat # A function of z and k
         mMask = np.ones(self.nMasses)
         mMask[exp.massCut<self.hcos.ms]=0
-        I = np.trapz(self.hcos.nzm*self.hcos.bh_ofM*self.hcos.ms/self.hcos.rho_matter_z(0)*mMask,self.hcos.ms, axis=-1)
+        I = np.trapz(self.hcos.nzm*self.hcos.bh*self.hcos.ms/self.hcos.rho_matter_z(0)*mMask,self.hcos.ms, axis=-1)
         W_of_Mlow =  ucen_plus_usat_of_Mlow # A function of z and k
         self.I_consistency = ((1 - I)/(self.hcos.ms[0]/self.hcos.rho_matter_z(0)))[:,None]*W_of_Mlow # Function of z & k
 
@@ -341,13 +341,13 @@ class hm_framework:
         for j, m in enumerate(hm_minimal.ms):
             kap = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
                                hm_minimal.ks, hm_minimal.uk_profiles['nfw'][i, j])(ells_in)
-            integ_k_second_bispec[..., j] = kap * hm_minimal.ms_rescaled[j] * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[
+            integ_k_second_bispec[..., j] = kap * hm_minimal.ms_rescaled[j] * hm_minimal.nzm[i, j] * hm_minimal.bh[
                 i, j]
 
             if m < exp_minimal.massCut:
                 y = exp_minimal.tsz_filter * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                                           hm_minimal.pk_profiles['y'][i, j])(ells_in)
-                integ_1h_for_2htrispec[..., j] = y * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+                integ_1h_for_2htrispec[..., j] = y * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
         # Integrals over single profile in 2h (for 1-3 trispec and 2h bispec biases)
         int_over_M_of_profile = pk_of_l * (
@@ -388,13 +388,13 @@ class hm_framework:
             # Accumulate the itgnds
             itgnd_1h_cross[..., j] = phicfft_damp * np.conjugate(kfft_damp) * hm_minimal.nzm[i, j]
             itgnd_1h_4pt[..., j] = phicfft_damp * np.conjugate(phicfft_damp) * hm_minimal.nzm[i, j]
-            itgnd_2h_1g[..., j] = np.conjugate(kfft) * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
-            itgnd_2h_2g[..., j] = phicfft * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+            itgnd_2h_1g[..., j] = np.conjugate(kfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_2h_2g[..., j] = phicfft * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             itgnd_2h_1_3_trispec[..., j] = phicfft * np.conjugate(phicfft_mixed) * hm_minimal.nzm[i, j] * \
-                                           hm_minimal.bh_ofM[i, j]
-            itgnd_2h_2_2_trispec[..., j] = phicfft * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+                                           hm_minimal.bh[i, j]
+            itgnd_2h_2_2_trispec[..., j] = phicfft * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             itgnd_2h_ky_y[..., j] = np.conjugate(kfft) * phicfft_mixed \
-                                    * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+                                    * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
             if get_secondary_bispec_bias:
                 # To keep QE calls tidy, define
@@ -425,7 +425,7 @@ class hm_framework:
                                                          kap_secbispec_damp * hm_minimal.ms_rescaled[j], y)
 
                 itgnd_1h_second_bispec[..., j] = hm_minimal.nzm[i, j] * sec_bispec_rec_1h
-                itgnd_2h_second_bispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * sec_bispec_rec_2h
+                itgnd_2h_second_bispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * sec_bispec_rec_2h
 
         # Perform the m integrals
         oneH_4pt_at_i = np.trapz(itgnd_1h_4pt, hm_minimal.ms, axis=-1)
@@ -566,7 +566,7 @@ class hm_framework:
             if m > exp_minimal.massCut: continue
             y = exp_minimal.tsz_filter * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                                       hm_minimal.pk_profiles['y'][i, j])(ells_in)
-            itgnd_y_for_2hbispec[..., j] = y * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+            itgnd_y_for_2hbispec[..., j] = y * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
         int_over_M_of_y = pk_of_l * (
                     np.trapz(itgnd_y_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.y_consistency[i])
@@ -613,10 +613,10 @@ class hm_framework:
             # Accumulate the itgnds
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
             itgnd_1h_cross[..., j] = mean_Ngal * phicfft_damp * np.conjugate(galfft_damp) * hm_minimal.nzm[i, j]
-            itgnd_2h_1g[..., j] = mean_Ngal * np.conjugate(galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
-            itgnd_2h_2g[..., j] = phicfft * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+            itgnd_2h_1g[..., j] = mean_Ngal * np.conjugate(galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_2h_2g[..., j] = phicfft * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             itgnd_2h_ky_y[..., j] = mean_Ngal * np.conjugate(galfft) * phicfft_y_intofy \
-                                    * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+                                    * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
         # Perform the m integrals
         oneH_cross_at_i = np.trapz(itgnd_1h_cross, hm_minimal.ms, axis=-1)
@@ -726,8 +726,8 @@ class hm_framework:
                 # Accumulate the itgnds
                 itgnd_1h_ps[:,j] = mean_Ngal * galfft_damp * np.conjugate(kfft_damp)*hcos.nzm[i,j]
                 # TODO: Implement 2h including consistency
-                itgnd_2h_1g[:, j] = mean_Ngal * np.conjugate(galfft)*hcos.nzm[i,j]*hcos.bh_ofM[i,j]
-                itgnd_2h_1m[:, j] = np.conjugate(kfft)*hcos.nzm[i,j]*hcos.bh_ofM[i,j]
+                itgnd_2h_1g[:, j] = mean_Ngal * np.conjugate(galfft)*hcos.nzm[i,j]*hcos.bh[i,j]
+                itgnd_2h_1m[:, j] = np.conjugate(kfft)*hcos.nzm[i,j]*hcos.bh[i,j]
 
             # Perform the m integrals
             oneH_ps[:,i]=np.trapz(itgnd_1h_ps,hcos.ms,axis=-1)
@@ -758,9 +758,9 @@ class hm_framework:
             f_sat_array = f_cen_array.copy()
             for i, freq in enumerate(np.array(exp.freq_GHz*1e9)):
                 freq = np.array([freq])
-                f_cen_array[i, :, :] = tls.from_Jypersr_to_uK(freq[0]*1e-9) * self.hcos.get_fcen(freq)[:,:,0]
+                f_cen_array[i, :, :] = tls.from_Jypersr_to_uK(freq[0]*1e-9) * self.hcos._get_fcen(freq)[:,:,0]
                 f_sat_array[i, :, :] = tls.from_Jypersr_to_uK(freq[0]*1e-9)\
-                                       * self.hcos.get_fsat(freq, cibinteg='trap', satmf='Tinker')[:,:,0]
+                                       * self.hcos._get_fsat(freq, cibinteg='trap', satmf='Tinker')[:,:,0]
             # Compute \Sum_{\nu} f^{\nu}(z,M) w^{\nu, ILC}_l
             self.CIB_central_filter = np.sum(exp.ILC_weights[:,:,None,None] * f_cen_array, axis=1)
             self.CIB_satellite_filter = np.sum(exp.ILC_weights[:,:,None,None] * f_sat_array, axis=1)
@@ -768,9 +768,9 @@ class hm_framework:
             # Single-frequency scenario. Return two (nZs, nMs) array containing f_cen(M,z) and f_sat(M,z)
             # Compute \Sum_{\nu} f^{\nu}(z,M) w^{\nu, ILC}_l
             self.CIB_central_filter = tls.from_Jypersr_to_uK(exp.freq_GHz)\
-                                      * self.hcos.get_fcen(exp.freq_GHz*1e9)[:,:,0][np.newaxis,:,:]
+                                      * self.hcos._get_fcen(exp.freq_GHz*1e9)[:,:,0][np.newaxis,:,:]
             self.CIB_satellite_filter = tls.from_Jypersr_to_uK(exp.freq_GHz) \
-                                        * self.hcos.get_fsat(exp.freq_GHz*1e9, cibinteg='trap',
+                                        * self.hcos._get_fsat(exp.freq_GHz*1e9, cibinteg='trap',
                                                              satmf='Tinker')[:,:,0][np.newaxis,:,:]
 
     def get_cib_auto_biases(self, exp, fftlog_way=True, get_secondary_bispec_bias=False, bin_width_out=30, \
@@ -927,7 +927,7 @@ class hm_framework:
             u_cen = hm_minimal.CIB_central_filter[:, i, j]  # Centrals come with a factor of u^0
             u_sat = hm_minimal.CIB_satellite_filter[:, i, j] * u
 
-            itgnd_I_for_2hbispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * (u_cen + u_sat)
+            itgnd_I_for_2hbispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (u_cen + u_sat)
 
         int_over_M_of_I = pk_of_l * (
                     np.trapz(itgnd_I_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.I_consistency[i])
@@ -980,11 +980,11 @@ class hm_framework:
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
             itgnd_1h_cross[..., j] = mean_Ngal * np.conjugate(galfft_damp) * hm_minimal.nzm[i, j] * \
                                      (phicfft_usat_usat_damp + 2 * phicfft_ucen_usat_damp)
-            itgnd_2h_k[..., j] = mean_Ngal * np.conjugate(galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
-            itgnd_2h_II[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] \
+            itgnd_2h_k[..., j] = mean_Ngal * np.conjugate(galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_2h_II[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] \
                                   * ((phicfft_usat_usat + 2 * phicfft_ucen_usat))
             itgnd_2h_kI_I[..., j] = mean_Ngal * np.conjugate(galfft) * phicfft_I_intofI \
-                                    * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+                                    * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
         oneH_cross_at_i = np.trapz(itgnd_1h_cross, hm_minimal.ms, axis=-1)
 
@@ -1047,7 +1047,7 @@ class hm_framework:
         for j, m in enumerate(hm_minimal.ms):
             kap = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
                                hm_minimal.ks, hm_minimal.uk_profiles['nfw'][i, j])(ells_in)
-            integ_k_second_bispec[..., j] = kap * hm_minimal.ms_rescaled[j] * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[
+            integ_k_second_bispec[..., j] = kap * hm_minimal.ms_rescaled[j] * hm_minimal.nzm[i, j] * hm_minimal.bh[
                 i, j]
 
             if m < exp_minimal.massCut:
@@ -1057,7 +1057,7 @@ class hm_framework:
                 u_cen = hm_minimal.CIB_central_filter[:, i, j]  # Centrals come with a factor of u^0
                 u_sat = hm_minimal.CIB_satellite_filter[:, i, j] * u
 
-                integ_1h_for_2htrispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * (u_cen + u_sat)
+                integ_1h_for_2htrispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (u_cen + u_sat)
 
         # Integrals over single profile in 2h (for 1-3 trispec and 2h bispec biases)
         Iint = pk_of_l * (np.trapz(integ_1h_for_2htrispec, hm_minimal.ms, axis=-1) + hm_minimal.I_consistency[i])
@@ -1116,16 +1116,16 @@ class hm_framework:
                         + 4 * phicfft_ucen_usat_damp * np.conjugate(
                     phicfft_usat_usat_damp))
 
-            itgnd_2h_k[..., j] = np.conjugate(kfft) * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
-            itgnd_2h_II[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * (
+            itgnd_2h_k[..., j] = np.conjugate(kfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_2h_II[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (
                         phicfft_usat_usat + 2 * phicfft_ucen_usat)
-            itgnd_2h_IintIII[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] \
+            itgnd_2h_IintIII[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] \
                                        * (phicfft_Iint_ucen * np.conjugate(phicfft_usat_usat)
                                           + phicfft_Iint_usat * np.conjugate(2 * phicfft_ucen_usat + phicfft_usat_usat))
-            itgnd_2h_II[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * (
+            itgnd_2h_II[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (
                         phicfft_usat_usat + 2 * phicfft_ucen_usat)
             itgnd_2h_kI_I[..., j] = np.conjugate(kfft) * (phicfft_Iint_ucen + phicfft_Iint_usat) \
-                                    * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+                                    * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
             if get_secondary_bispec_bias:
                 # To keep QE calls tidy, define
@@ -1155,7 +1155,7 @@ class hm_framework:
                                                          Iint)
 
                 itgnd_1h_second_bispec[..., j] = hm_minimal.nzm[i, j] * sec_bispec_rec_1h
-                itgnd_2h_second_bispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * sec_bispec_rec_2h
+                itgnd_2h_second_bispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * sec_bispec_rec_2h
 
         # Perform the m integrals
         IIII_1h_at_i = np.trapz(itgnd_1h_IIII, hm_minimal.ms, axis=-1)
@@ -1306,7 +1306,7 @@ class hm_framework:
 
                 # Accumulate the itgnds
                 itgnd_1h_ps[:, j] = hcos.nzm[i, j] * (2*u_cen*u_sat_damp + u_sat_damp*u_sat_damp)
-                itgnd_2h_1g[:, j] = hcos.nzm[i, j] * hcos.bh_ofM[i, j] * (u_cen + u_sat)
+                itgnd_2h_1g[:, j] = hcos.nzm[i, j] * hcos.bh[i, j] * (u_cen + u_sat)
 
                 # Perform the m integrals
             oneH_ps[:, i] = np.trapz(itgnd_1h_ps, hcos.ms, axis=-1)
@@ -1504,7 +1504,7 @@ class hm_framework:
         for j, m in enumerate(hm_minimal.ms):
             kap = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
                                hm_minimal.ks, hm_minimal.uk_profiles['nfw'][i, j])(ells_in)
-            integ_k_second_bispec[..., j] = kap * hm_minimal.ms_rescaled[j] * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[
+            integ_k_second_bispec[..., j] = kap * hm_minimal.ms_rescaled[j] * hm_minimal.nzm[i, j] * hm_minimal.bh[
                 i, j]
 
             if m < exp_minimal.massCut:
@@ -1516,8 +1516,8 @@ class hm_framework:
                 u_cen = hm_minimal.CIB_central_filter[:, i, j]  # Centrals come with a factor of u^0
                 u_sat = hm_minimal.CIB_satellite_filter[:, i, j] * u
 
-                integ_1h_I_for_2htrispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * (u_cen + u_sat)
-                integ_1h_y_for_2htrispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * y
+                integ_1h_I_for_2htrispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (u_cen + u_sat)
+                integ_1h_y_for_2htrispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * y
 
         # Integrals over single profile in 2h (for 1-3 trispec and 2h bispec biases)
         Iint = pk_of_l * (np.trapz(integ_1h_I_for_2htrispec, hm_minimal.ms, axis=-1) + hm_minimal.I_consistency[i])
@@ -1601,27 +1601,27 @@ class hm_framework:
                                     * (phicfft_ucen_y_damp * phicfft_usat_usat_damp
                                        + phicfft_usat_y_damp * (2 * phicfft_ucen_usat_damp + phicfft_usat_usat_damp))
 
-            itgnd_2h_k[..., j] = np.conjugate(kfft) * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
-            itgnd_2h_Iy[..., j] = (phicfft_ucen_y + phicfft_usat_y) * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
-            itgnd_2h_yy[..., j] = phicfft_yy * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
-            itgnd_2h_II[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * (
+            itgnd_2h_k[..., j] = np.conjugate(kfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_2h_Iy[..., j] = (phicfft_ucen_y + phicfft_usat_y) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_2h_yy[..., j] = phicfft_yy * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_2h_II[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (
                         phicfft_usat_usat + 2 * phicfft_ucen_usat)
 
-            itgnd_2h_Iyyy[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * (phicfft_Iint_y * phicfft_yy
+            itgnd_2h_Iyyy[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (phicfft_Iint_y * phicfft_yy
                                                                                       + 3 * phicfft_yint_y * (
                                                                                                   phicfft_ucen_y
                                                                                                   + phicfft_usat_y))
-            itgnd_2h_IIyy[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * (
+            itgnd_2h_IIyy[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (
                         2 * phicfft_yy * (phicfft_Iint_ucen
                                           + phicfft_Iint_usat)
                         + 2 * phicfft_yint_y * (2 * phicfft_ucen_usat
                                                 + phicfft_usat_usat))
-            itgnd_2h_IyIy[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * (
+            itgnd_2h_IyIy[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (
                         2 * phicfft_Iint_y * (phicfft_ucen_y
                                               + phicfft_usat_y)
                         + 2 * phicfft_usat_y * (2 * phicfft_Iint_ucen
                                                 + phicfft_Iint_usat))
-            itgnd_2h_yIII[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * (
+            itgnd_2h_yIII[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (
                         phicfft_yint_ucen * phicfft_usat_usat
                         + (phicfft_yint_usat + phicfft_Iint_y)
                         * (2 * phicfft_ucen_usat + phicfft_usat_usat)
@@ -1629,7 +1629,7 @@ class hm_framework:
                         + 2 * phicfft_Iint_usat * (phicfft_ucen_y
                                                    + phicfft_usat_y))
             itgnd_2h_kinHaloWfg[..., j] = np.conjugate(kfft) * (phicfft_yint_usat + phicfft_yint_usat + phicfft_Iint_y) \
-                                          * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+                                          * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
             if get_secondary_bispec_bias:
                 # To keep QE calls tidy, define
@@ -1660,7 +1660,7 @@ class hm_framework:
                                                      u_cen + u_sat)
 
                 itgnd_1h_second_bispec[..., j] = hm_minimal.nzm[i, j] * sec_bispec_rec_1h
-                itgnd_2h_second_bispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] * sec_bispec_rec_2h
+                itgnd_2h_second_bispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * sec_bispec_rec_2h
 
         # Perform the m integrals
         Iyyy_1h_at_i = np.trapz(itgnd_1h_Iyyy, hm_minimal.ms, axis=-1)
@@ -1824,8 +1824,8 @@ class hm_framework:
             u_cen = hm_minimal.CIB_central_filter[:, i, j]  # Centrals come with a factor of u^0
             u_sat = hm_minimal.CIB_satellite_filter[:, i, j] * u
 
-            itgnd_I_for_2hbispec[..., j] = (u_cen + u_sat) * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
-            itgnd_y_for_2hbispec[..., j] = y * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+            itgnd_I_for_2hbispec[..., j] = (u_cen + u_sat) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_y_for_2hbispec[..., j] = y * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
         int_over_M_of_I = pk_of_l * (
                     np.trapz(itgnd_I_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.I_consistency[i])
@@ -1886,11 +1886,11 @@ class hm_framework:
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
             itgnd_1h_cross[..., j] = mean_Ngal * np.conjugate(galfft_damp) * hm_minimal.nzm[i, j] \
                                      * (phicfft_ucen_y_damp + phicfft_usat_y_damp)
-            itgnd_2h_k[..., j] = mean_Ngal * np.conjugate(galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
-            itgnd_2h_II[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j] \
+            itgnd_2h_k[..., j] = mean_Ngal * np.conjugate(galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_2h_II[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] \
                                   * (phicfft_ucen_y + phicfft_usat_y)
             itgnd_2h_kinHaloWfg[..., j] = mean_Ngal * np.conjugate(galfft) * (phicfft_I_intofy + phicfft_y_intofI) \
-                                          * hm_minimal.nzm[i, j] * hm_minimal.bh_ofM[i, j]
+                                          * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
         oneH_cross_at_i = np.trapz(itgnd_1h_cross, hm_minimal.ms, axis=-1)
 
