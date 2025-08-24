@@ -67,7 +67,7 @@ class experiment:
                 * (optional) bare_bones= Bool. If True, don't run any of the costly operations at initialisation
                 * (optional) nlee = np array of size lmax+1 containing E-mode noise (and fg) power for delensing template
                 * (optional) gauss_order= int. Order of the Gaussian quadrature used to compute analytic QE
-                * (optional) estimator = str. Estimator one wants to compute biases for. Options: "lensing", "ksz_vel". Default is "lensing" so CosmoBLENDER can run as usual.
+                * (optional) estimator = str. Estimator to compute biases for. Options: "lensing", "ksz_vel". Default is "lensing" so CosmoBLENDER can run as usual.
         """
         if fname_scalar is None:
             fname_scalar = None#'~/Software/Quicklens-with-fixes/quicklens/data\/cl/planck_wp_highL/planck_lensing_wp_highL_bestFit_20130627_scalCls.dat'
@@ -83,11 +83,15 @@ class experiment:
         self.lmin = 1
         self.freq_GHz = freq_GHz
 
+        #CEV: choice of estimator
+        self.estimator = estimator
+
         # Hyperparams for analytic QE calculation
         self.gauss_order = gauss_order
         self.nodes, self.weights = self.get_quad_nodes_weights(gauss_order, self.lmin, self.lmax) # Nodes and weights for Gaussian quadrature
-        #
-        self.lnodes_grid, self.lpnodes_grid = np.meshgrid(self.nodes, self.nodes)
+        # CEV: we have a double integral that can be computed applying Gaus quad twice. That then translates into matrix multiplication (C.12) or (C.14).
+        # Create 2D meshgrid of nodes for evaluating the ell-dependence of the QE integrand.
+        self.lnodes_grid, self.lpnodes_grid = np.meshgrid(self.nodes, self.nodes) 
 
         self.massCut = massCut_Mvir #Convert from M_vir (which is what Alex uses) to M_200 (which is what the
                                     # Tinker mass function in hmvec uses) using the relation from White 01.
@@ -145,9 +149,19 @@ class experiment:
                                 'second_bispec': {'1h': empty_arr, '2h': empty_arr},
                                  'cross_w_gals' : {'1h' : empty_arr, '2h' : empty_arr}} })
 
-    def get_quad_nodes_weights(self, gauss_order, a, b):
+    def get_quad_nodes_weights(self, gauss_order, a, b): # CEV: gets Gaussian quadrature nodes and weights 1D for a given order. 
+        """
+        Computes the nodes and weights for Gaussian quadrature given the order. And translates them to the desired integration domain [a, b].
+        - Inputs:
+            - gauss_order = int. Hyperparameter of the integration. What Gaussian order to use in the quadrature.
+            - a = int. The lower bound of the integration domain. In practice lmin.
+            - b = int. The upper bound of the integration domain. In practice lmax.
+        - Returns:
+            - nodes = 1D array, len = gauss_order. Quad nodes for the given gauss order.
+            - weights = 1D array, len = gauss_order. Quad weights for the given gauss order.
+        """
         # Get the nodes and weights for Gaussian quadrature of chosen order
-        nodes_on_minus1to1, weights = roots_legendre(gauss_order) # scipy function
+        nodes_on_minus1to1, weights = roots_legendre(gauss_order) # scipy function gives nodes and weights from -1 to 1
         # We must now convert the nodes to our actual integration domain
         nodes = (b - a) / 2. * nodes_on_minus1to1 + (a + b) / 2.
         return nodes, (b - a) / 2. * weights
@@ -291,7 +305,7 @@ class experiment:
         self.__dict__.update(state)
 
     def get_weights_mat_total(self, ells_out): # CEV: takes W(L) and just computes the full weights matrix. keeps in self. Nothing to edit
-        # CEV: This function is never called in qest.py. It is called everytime you call to compute a bias. Given that this only depends on ell stuff I wonder why not call once here when you initialize qest and then use whenever.
+        # CEV: This function is never called in qest.py. It is called everytime you call to compute a bias. Given that this only depends on ell stuff I wonder why not call once here when you initialize qest and then use whenever. Because of being able to call different ells_out every time presumably. Not really because it's defined at initialization of biases anyway.
         ''' Get the matrices needed for Gaussian quadrature of QE integral '''
         self.weights_mat_total = device_put(jnp.array([self.weights_mat_at_L(L) for L in ells_out]))
 
@@ -316,7 +330,8 @@ class experiment:
 
     def ell_dependence(self, L, l, lp): # CEV: Here is where you actually code the weights
         '''
-        Sample the kernel
+        Sample the kernel of the chosen reconstruction (self.estimator).
+        For lensing:
         W(L, l, l') \equiv -\Delta(l,l',L) l l' \left(\frac{L^2 + l'^2 - l^2}{2Ll'} \right)\left[1 - \left( \frac{L^2 +l'^2 -l^2}{2Ll'}\right)\right]^{-\frac{1}{2}}
 
         Inputs:
@@ -324,18 +339,31 @@ class experiment:
         Returns:
             - W(L, l, lp)
         '''
+
+        # CEV: triangle condition is the same in both cases, keep as is.
         L = np.asarray(L, dtype=int)  # Ensure L is an integer
-        condition = (L + l >= lp) & (L + lp >= l) & (l + lp >= L)
-        singular_condition = (L + l == lp) | (L + lp == l) | (l + lp == L)
+        condition = (L + l >= lp) & (L + lp >= l) & (l + lp >= L) # CEV: First two encapsulate the two options of the |l-lp|<=L , third is same.
+        singular_condition = (L + l == lp) | (L + lp == l) | (l + lp == L) #CEV: exclude cases where Delta=0 to avoid infinities.
 
         result = np.zeros_like(l, dtype=float)  # Initialize result array with appropriate dtype
 
         valid_indices = np.where(condition & ~singular_condition)
         #TODO: I've removed minus sign to get expected -ve sign at low L in prim bispec. What's up?
-        result[valid_indices] = 2 * lp[valid_indices] * l[valid_indices] * (
+
+        if self.estimator == "lensing":
+            result[valid_indices] = 2 * lp[valid_indices] * l[valid_indices] * (
                     (L ** 2 + lp[valid_indices] ** 2 - l[valid_indices] ** 2) / (2 * L * lp[valid_indices])) * (1 - (
                     (L ** 2 + lp[valid_indices] ** 2 - l[valid_indices] ** 2) / (2 * L * lp[valid_indices])) ** 2) ** (
                                     -0.5)
+            
+        elif self.estimator == "ksz_vel":
+            triangle = np.zeros_like(l, dtype=float)
+            triangle[valid_indices] = 1./2 * ((L+l[valid_indices]+lp[valid_indices]) * 
+                                            (-L+l[valid_indices]+lp[valid_indices]) * 
+                                            (L-l[valid_indices]+lp[valid_indices]) * 
+                                            (L+l[valid_indices]-lp[valid_indices]))**(0.5)
+            result[valid_indices] = l[valid_indices] * lp[valid_indices] / triangle[valid_indices]
+
         return result
 
     def get_qe_norm(self, key='ptt'):
