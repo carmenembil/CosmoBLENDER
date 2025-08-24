@@ -83,15 +83,16 @@ class experiment:
 
         # Hyperparams for analytic QE calculation
         self.gauss_order = gauss_order
-        self.nodes, self.weights = self.get_quad_nodes_weights(gauss_order, self.lmin, self.lmax)
+        self.nodes, self.weights = self.get_quad_nodes_weights(gauss_order, self.lmin, self.lmax) # Nodes and weights for Gaussian quadrature
         #
         self.lnodes_grid, self.lpnodes_grid = np.meshgrid(self.nodes, self.nodes)
 
         self.massCut = massCut_Mvir #Convert from M_vir (which is what Alex uses) to M_200 (which is what the
                                     # Tinker mass function in hmvec uses) using the relation from White 01.
 
-        self.nlev_t = nlev_t
-        self.nlev_p = np.sqrt(2) * nlev_t
+        # Experiment info
+        self.nlev_t = nlev_t # noise level for temperature
+        self.nlev_p = np.sqrt(2) * nlev_t # noise level for polarization?
         self.beam_size = beam_size
 
         # Set up grid for Quicklens calculations
@@ -144,7 +145,7 @@ class experiment:
 
     def get_quad_nodes_weights(self, gauss_order, a, b):
         # Get the nodes and weights for Gaussian quadrature of chosen order
-        nodes_on_minus1to1, weights = roots_legendre(gauss_order)
+        nodes_on_minus1to1, weights = roots_legendre(gauss_order) # scipy function
         # We must now convert the nodes to our actual integration domain
         nodes = (b - a) / 2. * nodes_on_minus1to1 + (a + b) / 2.
         return nodes, (b - a) / 2. * weights
@@ -287,11 +288,12 @@ class experiment:
     def __setstate__(self, state):
         self.__dict__.update(state)
 
-    def get_weights_mat_total(self, ells_out):
+    def get_weights_mat_total(self, ells_out): # CEV: takes W(L) and just computes the full weights matrix. keeps in self.
+        # CEV: This function is never called in qest.py. It is called everytime you call to compute a bias. Given that this only depends on ell stuff I wonder why not call once here when you initialize qest and then use whenever.
         ''' Get the matrices needed for Gaussian quadrature of QE integral '''
         self.weights_mat_total = device_put(jnp.array([self.weights_mat_at_L(L) for L in ells_out]))
 
-    def weights_mat_at_L(self, L):
+    def weights_mat_at_L(self, L): # CEV: This computes the weights for equation C.12 as a function of L. In particular: w_i * w_j * W(L,l_i,l_j)
         '''
         Calculate the matrix to be used in the QE integration, i.e.,
         H(L). This is derived from
@@ -308,7 +310,7 @@ class experiment:
         '''
         return (self.weights * self.weights[:, np.newaxis] * self.ell_dependence(L, self.lnodes_grid, self.lpnodes_grid)).astype(np.float32)
 
-    def ell_dependence(self, L, l, lp):
+    def ell_dependence(self, L, l, lp): # CEV: Here is where you actually code the weights
         '''
         Sample the kernel
         W(L, l, l') \equiv -\Delta(l,l',L) l l' \left(\frac{L^2 + l'^2 - l^2}{2Ll'} \right)\left[1 - \left( \frac{L^2 +l'^2 -l^2}{2Ll'}\right)\right]^{-\frac{1}{2}}
@@ -593,9 +595,8 @@ def get_filtered_profiles_fftlog(profile_leg1, cltt_tot, ls, cltt_len, profile_l
 
     if profile_leg2 is None:
         profile_leg2 = profile_leg1
-    F_1_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg1 / cltt_tot))
-    F_2_of_l = smooth_low_monopoles(np.nan_to_num(cltt_len * profile_leg2/ cltt_tot))
-
+    F_1_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg1 / cltt_tot)) # CEV: Here is where filters are constructed
+    F_2_of_l = smooth_low_monopoles(np.nan_to_num(cltt_len * profile_leg2/ cltt_tot)) # CEV: find out how profile_legs are defined
     al_F_1 = interp1d(ls, F_1_of_l, bounds_error=False,  fill_value='extrapolate')
     al_F_2 = interp1d(ls, F_2_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_1, al_F_2
