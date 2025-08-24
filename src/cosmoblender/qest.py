@@ -40,7 +40,8 @@ class experiment:
                  dx_arcmin=1., nx_secbispec=128, dx_arcmin_secbispec=0.1, fname_scalar=None, fname_lensed=None,
                  freq_GHz=np.array([150.]), fg=True, atm_fg=False, MV_ILC_bool=False, deproject_tSZ=False,
                  deproject_CIB=False, bare_bones=False, nlee=None,
-                 gauss_order=1000):
+                 gauss_order=1000,
+                 estimator="lensing"): # CEV add flag to swap lensing and kSZ
         """ Initialise a cosmology and experimental charactierstics
             - Inputs:
                 * nlev_t = np array. Temperature noise level, in uK.arcmin. Either single value or one for each freq
@@ -66,6 +67,7 @@ class experiment:
                 * (optional) bare_bones= Bool. If True, don't run any of the costly operations at initialisation
                 * (optional) nlee = np array of size lmax+1 containing E-mode noise (and fg) power for delensing template
                 * (optional) gauss_order= int. Order of the Gaussian quadrature used to compute analytic QE
+                * (optional) estimator = str. Estimator one wants to compute biases for. Options: "lensing", "ksz_vel". Default is "lensing" so CosmoBLENDER can run as usual.
         """
         if fname_scalar is None:
             fname_scalar = None#'~/Software/Quicklens-with-fixes/quicklens/data\/cl/planck_wp_highL/planck_lensing_wp_highL_bestFit_20130627_scalCls.dat'
@@ -288,12 +290,14 @@ class experiment:
     def __setstate__(self, state):
         self.__dict__.update(state)
 
-    def get_weights_mat_total(self, ells_out): # CEV: takes W(L) and just computes the full weights matrix. keeps in self.
+    def get_weights_mat_total(self, ells_out): # CEV: takes W(L) and just computes the full weights matrix. keeps in self. Nothing to edit
         # CEV: This function is never called in qest.py. It is called everytime you call to compute a bias. Given that this only depends on ell stuff I wonder why not call once here when you initialize qest and then use whenever.
         ''' Get the matrices needed for Gaussian quadrature of QE integral '''
         self.weights_mat_total = device_put(jnp.array([self.weights_mat_at_L(L) for L in ells_out]))
 
-    def weights_mat_at_L(self, L): # CEV: This computes the weights for equation C.12 as a function of L. In particular: w_i * w_j * W(L,l_i,l_j)
+    def weights_mat_at_L(self, L): 
+        # CEV: This computes the weights for equation C.12 as a function of L. In particular: w_i * w_j * W(L,l_i,l_j) given you already have w and W
+        # CEV: w are just weights from the Gaussian quadrature that will be the same for kSZ
         '''
         Calculate the matrix to be used in the QE integration, i.e.,
         H(L). This is derived from
