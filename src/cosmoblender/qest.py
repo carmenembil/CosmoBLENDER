@@ -364,6 +364,9 @@ class experiment:
                                             (L+l[valid_indices]-lp[valid_indices]))**(0.5)
             result[valid_indices] = l[valid_indices] * lp[valid_indices] / triangle[valid_indices]
 
+        else:
+            raise ValueError(f"Unknown estimator: {self.estimator}. Only 'lensing' and 'ksz_vel' are supported.")
+
         return result
 
     def get_qe_norm(self, key='ptt'):
@@ -451,7 +454,7 @@ class experiment:
             # Calculate unnormalised QE
             if use_gauss == True:
                 assert (weights_mat_total is not None and nodes is not None)
-                F_1_array = jnp.array(al_F_1(nodes).astype(np.float32))
+                F_1_array = jnp.array(al_F_1(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
                 F_2_array = jnp.array(al_F_2(nodes).astype(np.float32))
                 unnorm_TT_qe = self.QE_via_quad(F_1_array, F_2_array)
             else:
@@ -632,3 +635,32 @@ def get_filtered_profiles_fftlog(profile_leg1, cltt_tot, ls, cltt_len, profile_l
     al_F_1 = interp1d(ls, F_1_of_l, bounds_error=False,  fill_value='extrapolate')
     al_F_2 = interp1d(ls, F_2_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_1, al_F_2
+
+def get_filtered_profiles_kSZ(profile_leg_T, cltt_tot, ls, cl_gg, cl_taug, profile_leg_g):
+    """
+    Filter the profiles in the way of, e.g., eq. (7.9) of Lewis & Challinor 06.
+    Inputs:
+        * profile_leg_T = 1D numpy array. Projected, spherically-symmetric emission profile. Truncated at lmax. T(ell) # CEV: this can be the same as antons
+        * profile_leg_g = 1D numpy array. Projected galaxy field g^alpha(ell). # CEV: TODO: how do i define this?
+        * cltt_tot = 1d numpy array. Total power in observed TT fields.
+        * ls = 1d numpy array. Multipoles at which cltt_tot is defined
+        * cl_gg = 1d numpy array. Galaxy auto spectrum at ls including shot noise.
+        * cl_taug = 1d numpy array. Galaxy-electron power spectrum at ls.
+    Returns:
+        * Interpolatable objects from which to get F_1 and F_2 at every multipole.
+        CEV: al_F_T and al_F_g are now functions of l.
+    """
+
+    def smooth_low_monopoles(array): 
+        ''' CEV: deals with 2 first multipoles by ignoring whatever info is in array and linearly extrapolating from l=3 onwards.'''
+        new = array[2:]
+        return np.interp(np.arange(len(array)), np.arange(len(array))[2:], new)
+
+    if profile_leg_g is None:
+        raise ValueError(f"Both profiles need to be specified when estimator='ksz_vel'.")
+    
+    F_T_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg_T / cltt_tot)) # CEV: Here is where filters are constructed
+    F_g_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug * profile_leg_g/ cl_gg)) # CEV: find out how to define delta field
+    al_F_T = interp1d(ls, F_T_of_l, bounds_error=False,  fill_value='extrapolate') # CEV: function to get the value of F at any l
+    al_F_g = interp1d(ls, F_g_of_l, bounds_error=False,  fill_value='extrapolate')
+    return al_F_T, al_F_g
