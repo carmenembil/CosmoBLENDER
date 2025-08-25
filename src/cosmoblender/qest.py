@@ -669,9 +669,9 @@ def get_filtered_profiles_fftlog(profile_leg1, cltt_tot, ls, cltt_len, profile_l
     al_F_2 = interp1d(ls, F_2_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_1, al_F_2
 
-def get_filtered_profiles_kSZ(profile_leg_T, cltt_tot, ls, cl_gg, cl_taug, profile_leg_g):
+def get_filtered_profiles_kSZ(self, profile_leg_T, cltt_tot, ls, cl_gg, cl_taug, profile_leg_g):
     """
-    Filter the profiles in the way of, e.g., eq. (7.9) of Lewis & Challinor 06.
+    Filter the profiles in the way of, e.g., eq. 13 of Kvasiuk & Munchmeyer (24). Or CEV.
     Inputs:
         * profile_leg_T = 1D numpy array. Projected, spherically-symmetric emission profile. Truncated at lmax. T(ell) # CEV: this can be the same as antons
         * profile_leg_g = 1D numpy array. Projected galaxy field g^alpha(ell). # CEV: TODO: how do i define this?
@@ -689,6 +689,11 @@ def get_filtered_profiles_kSZ(profile_leg_T, cltt_tot, ls, cl_gg, cl_taug, profi
         new = array[2:]
         return np.interp(np.arange(len(array)), np.arange(len(array))[2:], new)
     
+    # CEV: TODO: add a flag to require that ls should cover nodes range i.e. go up to lmax of reconstruction.
+    if ls[-1]<self.lmax-1:
+        raise ValueError(f"ls and Cl spectra should be provided up to lmax of reconstruction to avoid extrapolation. ls[-1]={ls[-1]}, self.lmax={self.lmax}")
+
+
     F_T_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg_T / cltt_tot)) # CEV: Here is where filters are constructed
     F_g_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug * profile_leg_g/ cl_gg)) # CEV: find out how to define delta field
     al_F_T = interp1d(ls, F_T_of_l, bounds_error=False,  fill_value='extrapolate') # CEV: function to get the value of F at any l
