@@ -456,7 +456,7 @@ class experiment:
                 assert (weights_mat_total is not None and nodes is not None)
                 F_1_array = jnp.array(al_F_1(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
                 F_2_array = jnp.array(al_F_2(nodes).astype(np.float32))
-                unnorm_TT_qe = self.QE_via_quad(F_1_array, F_2_array)
+                unnorm_TT_qe = self.QE_via_quad(F_1_array, F_2_array) # CEV: already given at ells_out through weights_mat_total.
             else:
                 assert (ccl_available), 'pyccl not available. Please install pyccl to use FFTlog'
                 unnorm_TT_qe = unnorm_TT_qe_fftlog(al_F_1, al_F_2, N_l, lmin, alpha, lmax)(ell_out)
@@ -481,6 +481,39 @@ class experiment:
             A_sky = (pix.dx * pix.nx) ** 2
             # Normalize the reconstruction
             return np.nan_to_num(unnormalized_phi.fft[:, :] / qe_norm.fft[:, :]) / np.sqrt(A_sky)
+        
+    def get_kSZ_qe(self, profile_leg_T, profile_leg_g, qe_norm, cltt_tot, ls, cl_gg, cl_taug,
+                   weights_mat_total, nodes=None):
+        """
+        Helper function to get the kSZ QE reconstruction for spherically-symmetric profiles using Gaussian quadratures. No fftlog or other options available in this case.
+        Inputs:
+            * profile_leg1 = 1D numpy array. Projected, spherically-symmetric emission profile. Truncated at lmax.
+            * profile_leg2 = 1D numpy array. Galaxy density profile for the other QE leg.
+            * qe_norm = a 1D array containg the normalization of the kSZ QE at ell_out
+            * cltt_tot = 1d numpy array. Total power in observed TT fields. Needed.
+            * ls = 1d numpy array. Multipoles at which cltt_tot is defined. Needed.
+            * cl_gg = 1d numpy array. Galaxy autospectrum spectrum at ls. Needed.
+            * cl_taug = 1d numpy array. Galaxy-electron power spectrum at ls. Needed.
+            * weights_mat_total = np array with dimensions (len(ells_out), len(nodes), len(nodes)).
+            * nodes = 1D np array. The Gaussian-quadrature-determined ells at which to evaluate integrals.
+        Returns:
+            * 1D array with the normalised reconstruction at the multipoles specified in ell_out.
+        """
+
+        if profile_leg_g is None:
+            raise ValueError(f"Both profiles need to be specified when estimator='ksz_vel'.")
+
+        assert (cltt_tot is not None and ls is not None and cl_gg is not None and cl_taug is not None)
+        al_F_T, al_F_g = get_filtered_profiles_kSZ(profile_leg_T, cltt_tot, ls, cl_gg, cl_taug, profile_leg_g)
+    
+        # Calculate unnormalised QE
+        assert (weights_mat_total is not None and nodes is not None)
+        F_T_array = jnp.array(al_F_T(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
+        F_g_array = jnp.array(al_F_g(nodes).astype(np.float32))
+        unnorm_TT_qe = self.QE_via_quad(F_T_array, F_g_array) # CEV: already gives result at ells_out through weights_mat_total
+
+        # CEV: in principle, no need for convention correction if normalization has been computed consistently.
+        return np.nan_to_num(unnorm_TT_qe / qe_norm)
 
     def QE_via_quad(self, F_1_array, F_2_array):
         '''
@@ -655,9 +688,6 @@ def get_filtered_profiles_kSZ(profile_leg_T, cltt_tot, ls, cl_gg, cl_taug, profi
         ''' CEV: deals with 2 first multipoles by ignoring whatever info is in array and linearly extrapolating from l=3 onwards.'''
         new = array[2:]
         return np.interp(np.arange(len(array)), np.arange(len(array))[2:], new)
-
-    if profile_leg_g is None:
-        raise ValueError(f"Both profiles need to be specified when estimator='ksz_vel'.")
     
     F_T_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg_T / cltt_tot)) # CEV: Here is where filters are constructed
     F_g_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug * profile_leg_g/ cl_gg)) # CEV: find out how to define delta field
