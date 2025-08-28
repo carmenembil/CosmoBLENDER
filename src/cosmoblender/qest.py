@@ -166,13 +166,13 @@ class experiment:
         nodes = (b - a) / 2. * nodes_on_minus1to1 + (a + b) / 2.
         return nodes, (b - a) / 2. * weights
 
-    def W_phi(self, lmax_clkk):
+    def W_phi(self, lmax_clkk): # CEV: only used for delensing
         # TODO: might want to specify cosmo here and elsewhere for ql
         clpp = ql.spec.get_camb_scalcl(None, lmax=lmax_clkk).clpp
         nlpp = self.get_nlpp(lmin=30, lmax=lmax_clkk, bin_width=30)
         return clpp / (clpp + nlpp)
 
-    def W_E(self, lmax_clee):
+    def W_E(self, lmax_clee): # CEV: only used for delensing
         ells = np.arange(lmax_clee+1)
         if self.nlee is not None:
             self.clee_tot = self.sky.cmb[0, 0].flensedEE(ells) + self.nlee
@@ -202,7 +202,7 @@ class experiment:
 
     def get_ilc_weights(self):
         """
-        Get the harmonic ILC weights
+        Get the harmonic ILC weights. CEV: used to construct tsz filter (qest.py) and CIB filter (biases.py)
         """
         lmin_cutoff = 14
         num_of_ells = 50 # Sum of weights is still 1 to 1 part in 10^14 even with ells spaced 100 apart
@@ -266,7 +266,7 @@ class experiment:
         # Avoid infinities when dividing by inverse variance
         self.cltt_tot[np.where(np.isnan(self.cltt_tot))] = np.inf
 
-    def get_total_EE_power(self, lmax):
+    def get_total_EE_power(self, lmax): # CEV: only used for delensing
         """
         Get total EE power from CMB, noise and fgs.
         At present, this assumes the E-modes are obtained from exactly the same channels as the temperature

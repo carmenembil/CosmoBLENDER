@@ -78,6 +78,8 @@ def split_positive_negative(spectrum):
 
 def pkToPell(chi,ks,pk):
     # State that the argument in P(k) is P(k*chi), and then set l=k*chi so that P(l/chi)
+    # CEV: gives a function of ell that returns pk at a given ell.
+    # CEV: TODO assumed limber?
     return interp1d(ks*chi - 0.5,pk,kind='cubic',bounds_error=False,fill_value=0)
 
 def cl2cfft_mod(cl, pix, ls=None, right=0, left=None):

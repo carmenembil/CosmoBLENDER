@@ -322,6 +322,7 @@ class hm_framework:
         itgnd_2h_ky_y = itgnd_1h_cross.copy();
 
         # To keep QE calls tidy, define
+        # CEV: function that calls qe and only depends on prof_1 and prof_2.
         QE = lambda prof_1, prof_2: exp_minimal.get_TT_qe(fftlog_way, ells_out, prof_1, exp_minimal.qe_norm_compressed,
                                                    exp_minimal.pix, exp_minimal.lmax, exp_minimal.cltt_tot,
                                                    exp_minimal.ls,
