@@ -487,8 +487,8 @@ class experiment:
         """
         Helper function to get the kSZ QE reconstruction for spherically-symmetric profiles using Gaussian quadratures. No fftlog or other options available in this case.
         Inputs:
-            * profile_leg1 = 1D numpy array. Projected, spherically-symmetric emission profile. Truncated at lmax.
-            * profile_leg2 = 1D numpy array. Galaxy density profile for the other QE leg.
+            * profile_leg_T = 1D numpy array. Projected, spherically-symmetric emission profile. Truncated at lmax.
+            * profile_leg_g = 1D numpy array. Galaxy density profile for the other QE leg.
             * qe_norm = a 1D array containg the normalization of the kSZ QE at ell_out
             * cltt_tot = 1d numpy array. Total power in observed TT fields. Needed.
             * ls = 1d numpy array. Multipoles at which cltt_tot is defined. Needed.
@@ -674,27 +674,25 @@ def get_filtered_profiles_kSZ(self, profile_leg_T, cltt_tot, ls, cl_gg, cl_taug,
     Filter the profiles in the way of, e.g., eq. 13 of Kvasiuk & Munchmeyer (24). Or CEV.
     Inputs:
         * profile_leg_T = 1D numpy array. Projected, spherically-symmetric emission profile. Truncated at lmax. T(ell) # CEV: this can be the same as antons
-        * profile_leg_g = 1D numpy array. Projected galaxy field g^alpha(ell). # CEV: TODO: how do i define this?
+        * profile_leg_g = 1D numpy array. Projected galaxy field g^alpha(ell). # CEV: TODO: this will be coming from the HOD that I will be defined by user 
         * cltt_tot = 1d numpy array. Total power in observed TT fields.
         * ls = 1d numpy array. Multipoles at which cltt_tot is defined
         * cl_gg = 1d numpy array. Galaxy auto spectrum at ls including shot noise.
         * cl_taug = 1d numpy array. Galaxy-electron power spectrum at ls.
     Returns:
-        * Interpolatable objects from which to get F_1 and F_2 at every multipole.
+        * Interpolatable objects from which to get F_T and F_g at every multipole.
         CEV: al_F_T and al_F_g are now functions of l.
     """
-
+    
     def smooth_low_monopoles(array): 
-        ''' CEV: deals with 2 first multipoles by ignoring whatever info is in array and linearly extrapolating from l=3 onwards.'''
+        ''' CEV: deals with 2 first multipoles by ignoring whatever info is in array and linearly extrapolating from l=3 backwards.'''
         new = array[2:]
         return np.interp(np.arange(len(array)), np.arange(len(array))[2:], new)
     
-    # CEV: TODO: add a flag to require that ls should cover nodes range i.e. go up to lmax of reconstruction.
     if ls[-1]<self.lmax-1:
         raise ValueError(f"ls and Cl spectra should be provided up to lmax of reconstruction to avoid extrapolation. ls[-1]={ls[-1]}, self.lmax={self.lmax}")
 
-
-    F_T_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg_T / cltt_tot)) # CEV: Here is where filters are constructed
+    F_T_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg_T / cltt_tot)) 
     F_g_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug * profile_leg_g/ cl_gg)) # CEV: find out how to define delta field
     al_F_T = interp1d(ls, F_T_of_l, bounds_error=False,  fill_value='extrapolate') # CEV: function to get the value of F at any l
     al_F_g = interp1d(ls, F_g_of_l, bounds_error=False,  fill_value='extrapolate')

@@ -188,7 +188,7 @@ def limber_itgrnd_kernel(hcos, polyspectrum_order):
 
 # Functions associated with galaxy hods
 
-def get_DESI_surface_ngal_of_z(sample, n_of_z_dir='/Users/antonbaleatolizancos/Projects/kappa_delensing/DESI_dndzs/'):
+def get_DESI_surface_ngal_of_z(sample, n_of_z_dir='/home/ce425/rds/rds-dirac-dp002/ce425/ksz_biases/data/DESI_dndzs/'):
     # TODO: Make this usable by anyone.
     ''' Return a numpy array with the galaxy number density per unit area in the sky for various DESI samples,
         as given in https://desi.lbl.gov/trac/wiki/keyprojects/y1kp1#no1
