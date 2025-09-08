@@ -21,7 +21,7 @@ try:
 except ImportError:
     ccl_available = False
 
-class Exp_minimal:
+class Exp_minimal: # CEV: this might actually never be used?
     """ A helper class to encapsulate some essential attributes of experiment() objects to be passed to parallelized
         workers, saving as much memory as possible
         - Inputs:
@@ -41,7 +41,8 @@ class experiment:
                  freq_GHz=np.array([150.]), fg=True, atm_fg=False, MV_ILC_bool=False, deproject_tSZ=False,
                  deproject_CIB=False, bare_bones=False, nlee=None,
                  gauss_order=1000,
-                 estimator="lensing"): # CEV add flag to swap lensing and kSZ
+                 estimator="lensing",                                   # CEV add flag to swap lensing and kSZ
+                 ls_gal_cls = None, cl_gg = None, cl_taug = None):  # CEV: spectra and corresponding ells for kSZ QE filters and norm.
         """ Initialise a cosmology and experimental charactierstics
             - Inputs:
                 * nlev_t = np array. Temperature noise level, in uK.arcmin. Either single value or one for each freq
@@ -67,7 +68,11 @@ class experiment:
                 * (optional) bare_bones= Bool. If True, don't run any of the costly operations at initialisation
                 * (optional) nlee = np array of size lmax+1 containing E-mode noise (and fg) power for delensing template
                 * (optional) gauss_order= int. Order of the Gaussian quadrature used to compute analytic QE
+                # CEV modifs:
                 * (optional) estimator = str. Estimator to compute biases for. Options: "lensing", "ksz_vel". Default is "lensing" so CosmoBLENDER can run as usual.
+                * (optional) ls_gal_cls = 1D numpy array. Multipoles at which cl_gg and cl_taug are defined. Needed if estimator="ksz_vel"
+                * (optional) cl_gg = 1D numpy array. Galaxy auto spectrum at ls_gal_cls including shot noise. Needed if estimator="ksz_vel"
+                * (optional) cl_taug = 1D numpy array. Cross-spectrum of electron optical depth and galaxy overdensity at ls_gal_cls. Needed if estimator="ksz_vel"
         """
         if fname_scalar is None:
             fname_scalar = None#'~/Software/Quicklens-with-fixes/quicklens/data\/cl/planck_wp_highL/planck_lensing_wp_highL_bestFit_20130627_scalCls.dat'
@@ -78,13 +83,28 @@ class experiment:
         self.cl_unl = ql.spec.get_camb_scalcl(fname_scalar, lmax=lmax)
         self.cl_len = ql.spec.get_camb_lensedcl(fname_lensed, lmax=lmax)
         self.nlee = nlee
-        self.ls = self.cl_len.ls
+        self.ls = self.cl_len.ls # CEV: these ls that come from cl_len will be used across for cltt_tot but therefor also for ksz filters.
         self.lmax = lmax
         self.lmin = 1
         self.freq_GHz = freq_GHz
 
         #CEV: choice of estimator
         self.estimator = estimator
+
+        # CEV: Requiere and interpolate cl_gg and cl_taug if using ksz_vel estimator to ls to match cltt_tot.
+        if self.estimator == "ksz_vel":
+            # Flags for ksz_vel case
+            assert ls_gal_cls is not None, "Please provide ls_gal_cls when using ksz_vel estimator"
+            assert cl_gg is not None, "Please provide cl_gg when using ksz_vel estimator"
+            assert cl_taug is not None, "Please provide cl_taug when using ksz_vel estimator"
+
+            # Ensure ls_gal_cls goes up to at least lmax
+            if ls_gal_cls[-1] < self.lmax:
+                raise ValueError(f"ls_gal_cls must go up to at least lmax of reconstruction ({self.lmax}), but got ls_gal_cls[-1]={ls_gal_cls[-1]}")
+
+            # Directly interpolate cl_gg and cl_taug to self.ls
+            self.cl_gg = np.interp(self.ls, ls_gal_cls, cl_gg, left=0., right=0.)       # CEV: I think there are enough flags for these left and right to never be used. If they are it will probably break the filters (~1/cl_gg).
+            self.cl_taug = np.interp(self.ls, ls_gal_cls, cl_taug, left=0., right=0.)
 
         # Hyperparams for analytic QE calculation
         self.gauss_order = gauss_order
@@ -130,7 +150,10 @@ class experiment:
             # Calculate inverse-variance filters
             self.inverse_variance_filters()
             # Calculate QE norm
-            self.get_qe_norm()
+            if self.estimator == "lensing":
+                self.get_qe_norm()
+            elif self.estimator == "ksz_vel":
+                self.get_qe_ksz_norm(self.nodes, cl_gg=self.cl_gg, cl_taug=self.cl_taug, cltt_tot=self.cltt_tot, ls=self.ls)
 
         # Initialise an empty dictionary to store the biases
         empty_arr = {}
@@ -369,15 +392,39 @@ class experiment:
 
         return result
 
-    def get_qe_norm(self, key='ptt'):
+    def get_qe_norm(self, key='ptt', ):
         """
         Calculate the QE normalisation as the reciprocal of the N^{(0)} bias
         Inputs:
             * (optional) key = String. The quadratic estimator key. Default is 'ptt' for TT
         # TODO: replace this with a faster analytic calculation that does away with Quicklens dependence
         """
-        self.qest_lib = ql.sims.qest.library(self.cl_unl, self.cl_len, self.ivf_lib)
-        self.qe_norm = self.qest_lib.get_qr(key)
+        if self.estimator == "lensing":
+            self.qest_lib = ql.sims.qest.library(self.cl_unl, self.cl_len, self.ivf_lib)
+            self.qe_norm = self.qest_lib.get_qr(key)
+
+    def get_qe_ksz_norm(self, nodes, cl_gg, cl_taug, cltt_tot, ls):
+        """
+        Calculate the kSZ velocity quadratic estimator normalisation
+        Inputs:
+            * weights_mat_total = np array with dimensions (len(ells_out), len(nodes), len(nodes)).
+            * nodes = 1D np array. The Gaussian-quadrature-determined ells at which to evaluate integrals. Needed
+                                            if use_gauss=True
+            * cl_gg = 1D numpy array. Galaxy auto spectrum at ls including shot noise.
+            * cl_taug = 1D numpy array. Cross-spectrum of electron optical depth and galaxy overdensity at ls.
+            * cltt_tot = 1d numpy array. Total power in observed TT fields.
+            * ls = 1d numpy array. Multipoles at which cltt_tot is defined.
+        Returns:
+            * qe_norm = 1D numpy array. Normalisation at ells_out multipoles.
+        """
+
+        # Get the filters F_1 and F_2 from new function
+        al_F_1, al_F_2 = get_filters_kSZ_norm(cltt_tot, ls, cl_gg=cl_gg, cl_taug=cl_taug)
+
+        F_1_array = jnp.array(al_F_1(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
+        F_2_array = jnp.array(al_F_2(nodes).astype(np.float32))
+
+        self.qe_ksz_norm = self.QE_via_quad(F_1_array, F_2_array)
 
     def get_nlpp(self, lmin=30, lmax=3000, bin_width=30):
         # TODO: adapt  the lmax of these bins to the lmax_out of hm_object
@@ -482,7 +529,7 @@ class experiment:
             # Normalize the reconstruction
             return np.nan_to_num(unnormalized_phi.fft[:, :] / qe_norm.fft[:, :]) / np.sqrt(A_sky)
         
-    def get_kSZ_qe(self, profile_leg_T, profile_leg_g, qe_norm, cltt_tot, ls, cl_gg, cl_taug,
+    def get_kSZ_qe(self, profile_leg_T, profile_leg_g, qe_ksz_norm, cltt_tot, ls, cl_gg, cl_taug,
                    weights_mat_total, nodes=None):
         """
         Helper function to get the kSZ QE reconstruction for spherically-symmetric profiles using Gaussian quadratures. No fftlog or other options available in this case.
@@ -510,10 +557,10 @@ class experiment:
         assert (weights_mat_total is not None and nodes is not None)
         F_T_array = jnp.array(al_F_T(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
         F_g_array = jnp.array(al_F_g(nodes).astype(np.float32))
-        unnorm_TT_qe = self.QE_via_quad(F_T_array, F_g_array) # CEV: already gives result at ells_out through weights_mat_total
+        unnorm_ksz_qe = self.QE_via_quad(F_T_array, F_g_array) # CEV: already gives result at ells_out through weights_mat_total
 
         # CEV: in principle, no need for convention correction if normalization has been computed consistently.
-        return np.nan_to_num(unnorm_TT_qe / qe_norm)
+        return np.nan_to_num(unnorm_ksz_qe / qe_ksz_norm)
 
     def QE_via_quad(self, F_1_array, F_2_array):
         '''
@@ -543,6 +590,7 @@ class experiment:
         Returns:
             - The unnormalized lensing reconstruction at L
         '''
+        # CEV: TODO: ojo with this 2pi. Not sure it's consistent with my kSZ normalization. Check.
         return jnp.dot(self.inner_mult(F_2_array), F_1_array) / (2 * np.pi)
 
     @partial(jit, static_argnums=(0,))
@@ -697,3 +745,22 @@ def get_filtered_profiles_kSZ(self, profile_leg_T, cltt_tot, ls, cl_gg, cl_taug,
     al_F_T = interp1d(ls, F_T_of_l, bounds_error=False,  fill_value='extrapolate') # CEV: function to get the value of F at any l
     al_F_g = interp1d(ls, F_g_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_T, al_F_g
+
+def get_filters_kSZ_norm(self, cltt_tot, ls, cl_gg, cl_taug):
+    """
+    Same function as above but without profiles, for the kSZ normalization.
+    """
+    
+    def smooth_low_monopoles(array): 
+        ''' CEV: deals with 2 first multipoles by ignoring whatever info is in array and linearly extrapolating from l=3 backwards.'''
+        new = array[2:]
+        return np.interp(np.arange(len(array)), np.arange(len(array))[2:], new)
+    
+    if ls[-1]<self.lmax-1:
+        raise ValueError(f"ls and Cl spectra should be provided up to lmax of reconstruction to avoid extrapolation. ls[-1]={ls[-1]}, self.lmax={self.lmax}")
+
+    F_1_of_l = smooth_low_monopoles(np.nan_to_num(1.0 / cltt_tot)) 
+    F_2_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug / cl_gg)) 
+    al_F_1 = interp1d(ls, F_1_of_l, bounds_error=False,  fill_value='extrapolate') # CEV: function to get the value of F at any l
+    al_F_2 = interp1d(ls, F_2_of_l, bounds_error=False,  fill_value='extrapolate')
+    return al_F_1, al_F_2
