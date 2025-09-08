@@ -392,16 +392,15 @@ class experiment:
 
         return result
 
-    def get_qe_norm(self, key='ptt', ):
+    def get_qe_norm(self, key='ptt'):
         """
         Calculate the QE normalisation as the reciprocal of the N^{(0)} bias
         Inputs:
             * (optional) key = String. The quadratic estimator key. Default is 'ptt' for TT
         # TODO: replace this with a faster analytic calculation that does away with Quicklens dependence
         """
-        if self.estimator == "lensing":
-            self.qest_lib = ql.sims.qest.library(self.cl_unl, self.cl_len, self.ivf_lib)
-            self.qe_norm = self.qest_lib.get_qr(key)
+        self.qest_lib = ql.sims.qest.library(self.cl_unl, self.cl_len, self.ivf_lib)
+        self.qe_norm = self.qest_lib.get_qr(key)
 
     def get_qe_ksz_norm(self, nodes, cl_gg, cl_taug, cltt_tot, ls):
         """
@@ -749,6 +748,7 @@ def get_filtered_profiles_kSZ(self, profile_leg_T, cltt_tot, ls, cl_gg, cl_taug,
 def get_filters_kSZ_norm(self, cltt_tot, ls, cl_gg, cl_taug):
     """
     Same function as above but without profiles, for the kSZ normalization.
+    CEV: TODO: see if this can be merged with the above function.
     """
     
     def smooth_low_monopoles(array): 
