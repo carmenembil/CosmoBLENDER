@@ -37,7 +37,7 @@ class hm_framework:
                  k_max=10, nks=1001, mass_function='sheth-torman', mdef='vir', cib_model='planck13', cosmoParams=None
                  , xmax=5, nxs=40000, tsz_param_override={}):
         """ Inputs:
-                * lmax_out = int. Maximum multipole at which to return the lensing reconstruction
+                * lmax_out = int. Maximum multipole (L) at which to return the lensing reconstruction
                 * m_min = Minimum virial mass for the halo model calculation
                 * m_max = Maximum virial mass for the halo model calculation (bot that massCut_Mvir will overide this)
                 * nMasses = Integer. Number of steps in mass for the integrals
@@ -297,8 +297,8 @@ class hm_framework:
 ### BIASES CALCULATIONS
 
 # tSZ
-    def get_tsz_cross_biases(self, exp, gzs, gdndz, fftlog_way=True, bin_width_out=30, survey_name='LSST',
-                             damp_1h_prof=True, gal_consistency=False, tsz_consistency=False, max_workers=None):
+    def get_tsz_cross_biases(self, exp, gzs, gdndz, bin_width_out=30, survey_name='LSST',
+                             damp_1h_prof=True, gal_consistency=False, tsz_consistency=False):
         """
         Calculate the tsz biases to the cross-correlation of CMB lensing with a galaxy survey, (C^{g\phi}_L)
         given an "experiment" object (defined in qest.py)
@@ -312,8 +312,9 @@ class hm_framework:
             * (optional) survey_name = str. Name labelling the HOD characterizing the survey we are x-ing lensing with
             * (optional) damp_1h_prof = Bool. Default is False. Whether to damp the profiles at low k in 1h terms
             * (optional) gal_consistency = Bool. Whether to impose consistency condition on g to correct for missing
-                              low mass halos in integrals a la Schmidt 15. Typically not needed
-            * (optional) max_workers = int. Max number of parallel workers to launch. Default is # the machine has
+                              low mass halos in integrals a la Schmidt 15.
+            * (optional) tsz_consistency = Bool. Whether to impose consistency condition on tSZ to correct for missing
+                              low mass halos in integrals a la Schmidt 15.
         """
         # CEV: hcos created at init: 
         # self.hcos = hm.HaloModel(zs,ks,ms=ms,mass_function=mass_function,params=cosmoParams,mdef=mdef)
@@ -324,7 +325,7 @@ class hm_framework:
         # hm_calc.hcos.add_hod(name=survey_name, mthresh=10**11.5+hm_calc.hcos.zs*0.) 
         # hm_calc.get_tsz_cross_biases(experiment, z_mean_gal, surface_ngal_of_z_gal, survey_name=survey_name)
         hcos = self.hcos
-        # CEV: I think these are low mass corrections from Schmidt-style. Deals with problems from not integrating to low enough mass. 
+        # CEV: Low mass corrections from Schmidt-style. Deals with problems from not integrating to low enough mass. 
         # In principle it should be 0 to inf.
         # CEV: TODO: test importance of these once code is working.
         if tsz_consistency:
@@ -336,42 +337,30 @@ class hm_framework:
         ells_out = np.linspace(1, self.lmax_out)
         # Get the nodes, weights and matrices needed for Gaussian quadrature of QE integral
         exp.get_weights_mat_total(ells_out)
-        # CEV: TODO: initialise qe norm here.
-        if not fftlog_way:
-            lbins = np.arange(1,self.lmax_out+1,bin_width_out)
 
-        #nx = self.lmax_out+1 if fftlog_way else exp.pix.nx
-        # CEV: some length for future variables?
-        nx = len(ells_out) if fftlog_way else exp.pix.nx
+        # CEV: TODO: some length for future variables?
+        nx = len(ells_out)
 
         # Get frequency scaling of tSZ, possibly including harmonic ILC cleaning
         # CEV: you can think of this as a multiplicative transfer function
+        # CEV: TODO: undestand
         exp.tsz_filter = exp.get_tsz_filter()
 
         # The one and two halo bias terms -- these store the itgnd to be integrated over z.
         # Dimensions depend on method
-        oneH_cross = np.zeros([nx,self.nZs])+0j if fftlog_way else np.zeros([nx,nx,self.nZs])+0j
-        twoH_cross = np.zeros([nx,self.nZs])+0j if fftlog_way else np.zeros([nx,nx,self.nZs])+0j
-
-        # If using FFTLog, we can compress the normalization to 1D
-        # CEV: just dealing with ql normalization and making it a 1D array with len(ells_out).
-        # CEV: exp.qe_norm_compressed is just an array of len(ells_out) now. Could be interchanged with my already computed one.
-        if fftlog_way:
-            norm_bin_width = 40  # These are somewhat arbitrary
-            lmin = 1  # These are somewhat arbitrary
-            lbins = np.arange(lmin, exp.lmax, norm_bin_width)
-            exp.qe_norm_compressed = np.interp(ells_out, exp.qe_norm.get_ml(lbins).ls, exp.qe_norm.get_ml(lbins).specs['cl']).astype('float32')
-        else:
-            exp.qe_norm_compressed = exp.qe_norm
+        oneH_cross = np.zeros([nx,self.nZs])+0j
+        twoH_cross = np.zeros([nx,self.nZs])+0j
 
         # Run in parallel
         hm_minimal = Hm_minimal(self)
         exp_minimal = exp
 
-        n = len(hcos.zs)
+        n = len(hcos.zs) # CEV: so zs = np.linspace(z_min,z_max,nZs), but then we are gonna integrate over np.arange(len(zs))? Yes becuase n is used as the index of the redshift, not the redshift itself.
+
         # CEV: map the function to each redshift slice. Each of the variables from 2 to end are the inputs to tsZ_cross_itgrnds_each_z.
         # CEV: 'map' applies the function to each element of the first argument (here np.arange(n)) and the other arguments are just repeated n times.
-        outputs = map(self.tsZ_cross_itgrnds_each_z, np.arange(n), n * [ells_out], n * [fftlog_way],
+        # CEV: TODO: will need to edit this according to tsZ_cross_itgrnds_each_z new inputs.
+        outputs = map(self.tsZ_cross_itgrnds_each_z, np.arange(n), n * [ells_out],
                                n * [damp_1h_prof], n * [exp_minimal], n * [hm_minimal], n * [survey_name])
 
         # CEV: three dots mean "as many colons as needed to make the shape work out" in this case, tsz_cross_itgrnds_each_z returns two numbers? for 1h and 2h terms, so those in the end oneH_cross and twoH_cross are just 1d arrays of len(ells_out)?
@@ -380,20 +369,18 @@ class hm_framework:
 
         # Integrate over z
         # CEV: TODO: potentially put T_CMB inside y_window?
-        gyy_intgrnd = self.T_CMB ** 2 * tls.limber_itgrnd_kernel(hcos, 3) \
-                      * tls.gal_window(hcos, hcos.zs, gzs, gdndz) * tls.y_window(hcos) ** 2
-        exp.biases['tsz']['cross_w_gals']['1h'] = np.trapz(oneH_cross * gyy_intgrnd, hcos.zs, axis=-1)
-        exp.biases['tsz']['cross_w_gals']['2h'] = np.trapz(twoH_cross * gyy_intgrnd, hcos.zs, axis=-1)
-        if fftlog_way:
-            exp.biases['ells'] = ells_out
-            return
-        else:
-            exp.biases['ells'] = ql.maps.cfft(exp.nx,exp.dx,fft=exp.biases['tsz']['trispec']['1h']).get_ml(lbins).ls
-            exp.biases['tsz']['cross_w_gals']['1h'] = ql.maps.cfft(exp.nx,exp.dx,fft=exp.biases['tsz']['cross_w_gals']['1h']).get_ml(lbins).specs['cl']
-            exp.biases['tsz']['cross_w_gals']['2h'] = ql.maps.cfft(exp.nx,exp.dx,fft=exp.biases['tsz']['cross_w_gals']['2h']).get_ml(lbins).specs['cl']
-            return
+        # CEV: TODO: allow G and g to be different. 
+        gyg_intgrnd = self.T_CMB * tls.limber_itgrnd_kernel(hcos, 3) \
+                      * tls.gal_window(hcos, hcos.zs, gzs, gdndz) * tls.y_window(hcos) * tls.gal_window(hcos, hcos.zs, gzs, gdndz)
+        
+        exp.biases['tsz']['cross_w_gals']['1h'] = np.trapz(oneH_cross * gyg_intgrnd, hcos.zs, axis=-1)
+        exp.biases['tsz']['cross_w_gals']['2h'] = np.trapz(twoH_cross * gyg_intgrnd, hcos.zs, axis=-1)
 
-    def tsZ_cross_itgrnds_each_z(self, i, ells_out, fftlog_way, damp_1h_prof, exp_minimal, hm_minimal, survey_name):
+        exp.biases['ells'] = ells_out
+        return
+     
+
+    def tsZ_cross_itgrnds_each_z(self, i, ells_out, damp_1h_prof, exp_minimal, hm_minimal, survey_name):
         """
         Obtain the integrand at the i-th redshift by doing the integrals over mass and the QE reconstructions.
         Input:
@@ -403,62 +390,57 @@ class hm_framework:
             * exp_minimal = instance of qest.exp_minimal(exp)
             * hm_minimal = instance of biases.hm_minimal(hm_framework)
         """
-        #print(f'Now in parallel loop {i}')
-        # nx = hm_minimal.lmax_out + 1 if fftlog_way else exp_minimal.pix.nx
-        nx = len(ells_out) if fftlog_way else exp_minimal.pix.nx
-        ells_in = np.arange(0, exp_minimal.lmax + 1)
+        
+        nx = len(ells_out)
+        ells_in = np.arange(0, exp_minimal.lmax + 1) # CEV: always used in pkToPell calls. I think it's small ell?
 
-        # Temporary storage
-        itgnd_1h_cross = np.zeros([nx, hm_minimal.nMasses]) + 0j if fftlog_way else np.zeros(
-            [nx, nx, hm_minimal.nMasses]) + 0j
-        itgnd_2h_2g = np.zeros([nx, hm_minimal.nMasses]) + 0j if fftlog_way else np.zeros(
-            [nx, nx, hm_minimal.nMasses]) + 0j
-        itgnd_2h_1g = np.zeros([nx, hm_minimal.nMasses]) + 0j if fftlog_way else np.zeros(
-            [nx, nx, hm_minimal.nMasses]) + 0j
+        # Temporary storage. CEV: nMasses is the # of steps for the mass integral, given by user at init.
+        # CEV: TODO: rename / deal with later
+        itgnd_1h_cross = np.zeros([nx, hm_minimal.nMasses]) + 0j 
+        itgnd_2h_2g = np.zeros([nx, hm_minimal.nMasses]) + 0j 
+        itgnd_2h_1g = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         itgnd_2h_ky_y = itgnd_1h_cross.copy();
-        itgnd_y_for_2hbispec = np.zeros([exp_minimal.lmax + 1, hm_minimal.nMasses]) if fftlog_way else np.zeros(
-            [nx, nx, hm_minimal.nMasses])  # TODO: not sure what to do here with nx for QL
+        itgnd_y_for_2hbispec = np.zeros([exp_minimal.lmax + 1, hm_minimal.nMasses]) 
 
-        # To keep QE calls tidy, define
-        QE = lambda prof_1, prof_2: exp_minimal.get_TT_qe(fftlog_way, ells_out, prof_1, exp_minimal.qe_norm_compressed,
-                                                   exp_minimal.pix, exp_minimal.lmax, exp_minimal.cltt_tot,
-                                                   exp_minimal.ls,
-                                                   exp_minimal.cl_len.cltt, exp_minimal.qest_lib, exp_minimal.ivf_lib,
-                                                   prof_2,
-                                                   weights_mat_total=exp_minimal.weights_mat_total,
-                                                   nodes=exp_minimal.nodes)
-
+        # To keep QE calls tidy
+        QE = lambda prof_T, prof_g: exp_minimal.get_kSZ_qe(prof_T, prof_g, 
+                                                           exp_minimal.cltt_tot, exp_minimal.ls, 
+                                                           exp_minimal.cl_gg, exp_minimal.cl_taug,
+                                                           exp_minimal.weights_mat_total, exp_minimal.nodes)
+        
         # Project the matter power spectrum for two-halo terms
+        # CEV: hm_minimal.Pzk is actually hm_full.hcos.Pzk, so Pzk is already defined at hcos.zs
         pk_of_l = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks, hm_minimal.Pzk[i])(ells_in)
         pk_of_L = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks, hm_minimal.Pzk[i])(ells_out)
-        if not fftlog_way:
-            pk_of_l = ql.spec.cl2cfft(pk_of_l, exp_minimal.pix).fft
-            pk_of_L = ql.spec.cl2cfft(pk_of_L, exp_minimal.pix).fft
 
-        # Integral over M for 2halo trispectrum. This will later go into a QE
+        # Integral over M for 2halo bispectrum. This will later go into a QE
         for j, m in enumerate(hm_minimal.ms):
             if m > exp_minimal.massCut: continue
+    
             y = exp_minimal.tsz_filter * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
-                                                      hm_minimal.pk_profiles['y'][i, j])(ells_in)
+                                                      hm_minimal.pk_profiles['y'][i, j])(ells_in) # = y_{3D}(l/chi, M=j, z=i)
             itgnd_y_for_2hbispec[..., j] = y * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
         int_over_M_of_y = pk_of_l * (
                     np.trapz(itgnd_y_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.y_consistency[i])
 
         # M integral.
+        # CEV: ms is array of masses from mmin to mmax in nMasses steps, for integration, given by user at init.
         for j, m in enumerate(hm_minimal.ms):
-            if m > exp_minimal.massCut: continue
+            if m > exp_minimal.massCut: continue # massCut given to experiment by user.
+            # CEV: TODO: i don't find anywhere exp.tsz_filter being defined? I think exp_minimal.tsz_filter = None...
+            # CEV: hm_minimal.pk_profiles['y'] comes directly from hmvec hcos.pk_profiles['y'].
             y = exp_minimal.tsz_filter * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                                       hm_minimal.pk_profiles['y'][i, j])(ells_in)
+            
             # Get the galaxy map --- analogous to kappa in the auto-biases. Note that we need a factor of
             # H dividing the galaxy window function to translate the hmvec convention to e.g. Ferraro & Hill 18 #TODO: why do you say that?
             gal = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
                                hm_minimal.ks, hm_minimal.uk_profiles['nfw'][i, j])(ells_out)
             # TODO: should ngal in denominator depend on z? ms_rescaled doesn't
-            galfft = gal / hm_minimal.hods[survey_name]['ngal'][i] if fftlog_way else ql.spec.cl2cfft(gal,
-                                                                                                      exp_minimal.pix).fft / \
-                                                                                      hm_minimal.hods[survey_name][
-                                                                                          'ngal'][i]
+            # CEV: TODO: understand this ngal divide.
+            galfft = gal / hm_minimal.hods[survey_name]['ngal'][i] 
+
             phicfft = QE(y, y)
             phicfft_y_intofy = QE(y, int_over_M_of_y)
 
@@ -471,13 +453,9 @@ class hm_framework:
                 gal_damp = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                         hm_minimal.uk_profiles['nfw'][i, j]
                                         * (1 - np.exp(-(hm_minimal.ks / hm_minimal.p['kstar_damping']))))(ells_out)
-                galfft_damp = gal_damp / hm_minimal.hods[survey_name]['ngal'][i] if fftlog_way else ql.spec.cl2cfft(
-                    gal_damp,
-                    exp_minimal.pix).fft / \
-                                                                                                    hm_minimal.hods[
-                                                                                                        survey_name][
-                                                                                                        'ngal'][i]
-                phicfft_damp = QE(y_damp, y_damp)
+                galfft_damp = gal_damp / hm_minimal.hods[survey_name]['ngal'][i] 
+                
+                phicfft_damp = QE(y_damp, y_damp) # CEV: only this one is needed for correcting 1h.
             else:
                 y_damp = y;
                 gal_damp = gal;
@@ -486,15 +464,18 @@ class hm_framework:
 
             # Accumulate the itgnds
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
+            # 1h
             itgnd_1h_cross[..., j] = mean_Ngal * phicfft_damp * np.conjugate(galfft_damp) * hm_minimal.nzm[i, j]
+            # 2h
             itgnd_2h_1g[..., j] = mean_Ngal * np.conjugate(galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             itgnd_2h_2g[..., j] = phicfft * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             itgnd_2h_ky_y[..., j] = mean_Ngal * np.conjugate(galfft) * phicfft_y_intofy \
                                     * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
         # Perform the m integrals
+        # 1h
         oneH_cross_at_i = np.trapz(itgnd_1h_cross, hm_minimal.ms, axis=-1)
-
+        # 2h CEV: strange way of doing it but ok.
         tmpCorr = np.trapz(itgnd_2h_1g, hm_minimal.ms, axis=-1)
         twoH_cross_at_i = np.trapz(itgnd_2h_2g, hm_minimal.ms, axis=-1) * (
                     tmpCorr + hm_minimal.g_consistency[i]) * pk_of_L \

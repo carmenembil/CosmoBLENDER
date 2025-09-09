@@ -414,7 +414,7 @@ class experiment:
                                             if use_gauss=True
             * cl_gg = 1D numpy array. Galaxy auto spectrum at ls including shot noise.
             * cl_taug = 1D numpy array. Cross-spectrum of electron optical depth and galaxy overdensity at ls.
-            * cltt_tot = 1d numpy array. Total power in observed TT fields.
+            * cltt_tot = 1d numpy array. Total power in observed TT fields at ls.
             * ls = 1d numpy array. Multipoles at which cltt_tot is defined.
         Returns:
             * qe_norm = 1D numpy array. Normalisation at ells_out multipoles.
@@ -530,7 +530,7 @@ class experiment:
             # Normalize the reconstruction
             return np.nan_to_num(unnormalized_phi.fft[:, :] / qe_norm.fft[:, :]) / np.sqrt(A_sky)
         
-    def get_kSZ_qe(self, profile_leg_T, profile_leg_g, qe_ksz_norm, cltt_tot, ls, cl_gg, cl_taug,
+    def get_kSZ_qe(self, profile_leg_T, profile_leg_g, cltt_tot, ls, cl_gg, cl_taug,
                    weights_mat_total, nodes=None):
         """
         Helper function to get the kSZ QE reconstruction for spherically-symmetric profiles using Gaussian quadratures. No fftlog or other options available in this case.
@@ -561,6 +561,8 @@ class experiment:
         unnorm_ksz_qe = self.QE_via_quad(F_T_array, F_g_array) # CEV: already gives result at ells_out through weights_mat_total
 
         # CEV: in principle, no need for convention correction if normalization has been computed consistently.
+        qe_ksz_norm = self.get_qe_ksz_norm(nodes, cl_gg, cl_taug, cltt_tot, ls)
+
         return np.nan_to_num(unnorm_ksz_qe / qe_ksz_norm)
 
     def QE_via_quad(self, F_1_array, F_2_array):
