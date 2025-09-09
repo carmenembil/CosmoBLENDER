@@ -462,7 +462,18 @@ class hm_framework:
                               low mass halos in integrals a la Schmidt 15. Typically not needed
             * (optional) max_workers = int. Max number of parallel workers to launch. Default is # the machine has
         """
+        # CEV: hcos created at init: 
+        # self.hcos = hm.HaloModel(zs,ks,ms=ms,mass_function=mass_function,params=cosmoParams,mdef=mdef)
+        # self.hcos.add_battaglia_pres_profile("y",family="pres",xmax=xmax,nxs=nxs, param_override=self.tsz_param_override)
+        # self.hcos.set_cibParams(cib_model)
+        # CEV: you add HODs to correlate with before running cross biases:
+        # hm_calc = biases.hm_framework(cosmoParams=cosmoParams, m_min=Mmin, nZs=nZs, nMasses=nMasses, cib_model=cib_model, z_max=z_max)
+        # hm_calc.hcos.add_hod(name=survey_name, mthresh=10**11.5+hm_calc.hcos.zs*0.) 
+        # hm_calc.get_tsz_cross_biases(experiment, z_mean_gal, surface_ngal_of_z_gal, survey_name=survey_name)
         hcos = self.hcos
+        # CEV: I think these are low mass corrections from Schmidt-style. Deals with problems from not integrating to low enough mass. 
+        # In principle it should be 0 to inf.
+        # CEV: TODO: test importance of these once code is working.
         if tsz_consistency:
             self.get_tsz_consistency(exp, lmax_proj=exp.lmax)
         if gal_consistency:
@@ -472,13 +483,16 @@ class hm_framework:
         ells_out = np.linspace(1, self.lmax_out)
         # Get the nodes, weights and matrices needed for Gaussian quadrature of QE integral
         exp.get_weights_mat_total(ells_out)
+        # CEV: TODO: initialise qe norm here.
         if not fftlog_way:
             lbins = np.arange(1,self.lmax_out+1,bin_width_out)
 
         #nx = self.lmax_out+1 if fftlog_way else exp.pix.nx
+        # CEV: some length for future variables?
         nx = len(ells_out) if fftlog_way else exp.pix.nx
 
         # Get frequency scaling of tSZ, possibly including harmonic ILC cleaning
+        # CEV: you can think of this as a multiplicative transfer function
         exp.tsz_filter = exp.get_tsz_filter()
 
         # The one and two halo bias terms -- these store the itgnd to be integrated over z.
@@ -487,6 +501,8 @@ class hm_framework:
         twoH_cross = np.zeros([nx,self.nZs])+0j if fftlog_way else np.zeros([nx,nx,self.nZs])+0j
 
         # If using FFTLog, we can compress the normalization to 1D
+        # CEV: just dealing with ql normalization and making it a 1D array with len(ells_out).
+        # CEV: exp.qe_norm_compressed is just an array of len(ells_out) now. Could be interchanged with my already computed one.
         if fftlog_way:
             norm_bin_width = 40  # These are somewhat arbitrary
             lmin = 1  # These are somewhat arbitrary
@@ -500,13 +516,17 @@ class hm_framework:
         exp_minimal = exp
 
         n = len(hcos.zs)
+        # CEV: map the function to each redshift slice. Each of the variables from 2 to end are the inputs to tsZ_cross_itgrnds_each_z.
+        # CEV: 'map' applies the function to each element of the first argument (here np.arange(n)) and the other arguments are just repeated n times.
         outputs = map(self.tsZ_cross_itgrnds_each_z, np.arange(n), n * [ells_out], n * [fftlog_way],
                                n * [damp_1h_prof], n * [exp_minimal], n * [hm_minimal], n * [survey_name])
 
+        # CEV: three dots mean "as many colons as needed to make the shape work out" in this case, tsz_cross_itgrnds_each_z returns two numbers? for 1h and 2h terms, so those in the end oneH_cross and twoH_cross are just 1d arrays of len(ells_out)?
         for idx, itgnds_at_i in enumerate(outputs):
             oneH_cross[...,idx], twoH_cross[...,idx] = itgnds_at_i
 
         # Integrate over z
+        # CEV: TODO: potentially put T_CMB inside y_window?
         gyy_intgrnd = self.T_CMB ** 2 * tls.limber_itgrnd_kernel(hcos, 3) \
                       * tls.gal_window(hcos, hcos.zs, gzs, gdndz) * tls.y_window(hcos) ** 2
         exp.biases['tsz']['cross_w_gals']['1h'] = np.trapz(oneH_cross * gyy_intgrnd, hcos.zs, axis=-1)
