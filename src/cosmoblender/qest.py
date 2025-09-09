@@ -136,25 +136,6 @@ class experiment:
         self.deproject_tSZ = deproject_tSZ
         self.deproject_CIB = deproject_CIB
 
-        if not bare_bones:
-            #Initialise sky model
-            self.sky = cmb_ilc.CMBILC(freq_GHz*1e9, beam_size, nlev_t, fg=fg, atm=atm_fg, lMaxT=self.lmax)
-            if len(self.freq_GHz)>1:
-                # In cases where there are several, compute ILC weights for combining different channels
-                assert MV_ILC_bool or deproject_tSZ or deproject_CIB, 'Please indicate how to combine different channels'
-                assert not (MV_ILC_bool and (deproject_tSZ or deproject_CIB)), 'Only one ILC type at a time!'
-                self.get_ilc_weights()
-            # Compute total TT power (incl. noise, fgs, cmb) for use in inverse-variance filtering
-            self.get_total_TT_power()
-
-            # Calculate inverse-variance filters
-            self.inverse_variance_filters()
-            # Calculate QE norm
-            if self.estimator == "lensing":
-                self.get_qe_norm()
-            elif self.estimator == "ksz_vel":
-                self.get_qe_ksz_norm(self.nodes, cl_gg=self.cl_gg, cl_taug=self.cl_taug, cltt_tot=self.cltt_tot, ls=self.ls)
-
         # Initialise an empty dictionary to store the biases
         empty_arr = {}
         self.biases = tls.CustomBiasesDict({ 'ells': empty_arr,
@@ -171,6 +152,28 @@ class experiment:
                                 'prim_bispec': {'1h': empty_arr, '2h': empty_arr},
                                 'second_bispec': {'1h': empty_arr, '2h': empty_arr},
                                  'cross_w_gals' : {'1h' : empty_arr, '2h' : empty_arr}} })
+
+        if not bare_bones:
+            #Initialise sky model
+            self.sky = cmb_ilc.CMBILC(freq_GHz*1e9, beam_size, nlev_t, fg=fg, atm=atm_fg, lMaxT=self.lmax)
+            if len(self.freq_GHz)>1:
+                # In cases where there are several, compute ILC weights for combining different channels
+                assert MV_ILC_bool or deproject_tSZ or deproject_CIB, 'Please indicate how to combine different channels'
+                assert not (MV_ILC_bool and (deproject_tSZ or deproject_CIB)), 'Only one ILC type at a time!'
+                self.get_ilc_weights()
+            # Compute total TT power (incl. noise, fgs, cmb) for use in inverse-variance filtering
+            self.get_total_TT_power()
+
+            # Calculate inverse-variance filters
+            self.inverse_variance_filters()
+            # Calculate QE norm
+            if self.estimator == "lensing":
+                self.get_qe_norm()
+            # CEV: in the kSZ case, this calculation depends on weights_mat_total, which is initialized in biases.py.
+            # Therefore, one needs to initialize the normalization also in biases.py right after get_weights_mat_total is called.
+            # CEV: TODO: potentially when code is working, one could make it so that weights_mat_total and qe_norm is only computed once. But not a priority.
+
+
 
     def get_quad_nodes_weights(self, gauss_order, a, b): # CEV: gets Gaussian quadrature nodes and weights 1D for a given order. 
         """
@@ -418,8 +421,7 @@ class experiment:
         """
 
         # Get the filters F_1 and F_2 from new function
-        al_F_1, al_F_2 = get_filters_kSZ_norm(cltt_tot, ls, cl_gg=cl_gg, cl_taug=cl_taug)
-
+        al_F_1, al_F_2 = get_filters_kSZ_norm(cltt_tot=cltt_tot, ls=ls, cl_gg=cl_gg, cl_taug=cl_taug)
         F_1_array = jnp.array(al_F_1(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
         F_2_array = jnp.array(al_F_2(nodes).astype(np.float32))
 
@@ -716,12 +718,12 @@ def get_filtered_profiles_fftlog(profile_leg1, cltt_tot, ls, cltt_len, profile_l
     al_F_2 = interp1d(ls, F_2_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_1, al_F_2
 
-def get_filtered_profiles_kSZ(self, profile_leg_T, cltt_tot, ls, cl_gg, cl_taug, profile_leg_g):
+def get_filtered_profiles_kSZ(profile_leg_T, cltt_tot, ls, cl_gg, cl_taug, profile_leg_g):
     """
     Filter the profiles in the way of, e.g., eq. 13 of Kvasiuk & Munchmeyer (24). Or CEV.
     Inputs:
         * profile_leg_T = 1D numpy array. Projected, spherically-symmetric emission profile. Truncated at lmax. T(ell) # CEV: this can be the same as antons
-        * profile_leg_g = 1D numpy array. Projected galaxy field g^alpha(ell). # CEV: TODO: this will be coming from the HOD that I will be defined by user 
+        * profile_leg_g = 1D numpy array. Projected galaxy field g^alpha(ell). # CEV: this will be coming from the HOD that I will be defined by user 
         * cltt_tot = 1d numpy array. Total power in observed TT fields.
         * ls = 1d numpy array. Multipoles at which cltt_tot is defined
         * cl_gg = 1d numpy array. Galaxy auto spectrum at ls including shot noise.
@@ -736,8 +738,7 @@ def get_filtered_profiles_kSZ(self, profile_leg_T, cltt_tot, ls, cl_gg, cl_taug,
         new = array[2:]
         return np.interp(np.arange(len(array)), np.arange(len(array))[2:], new)
     
-    if ls[-1]<self.lmax-1:
-        raise ValueError(f"ls and Cl spectra should be provided up to lmax of reconstruction to avoid extrapolation. ls[-1]={ls[-1]}, self.lmax={self.lmax}")
+    # CEV: if ls[-1]<self.lmax-1 not necessary, it is so by construction.
 
     F_T_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg_T / cltt_tot)) 
     F_g_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug * profile_leg_g/ cl_gg)) # CEV: find out how to define delta field
@@ -745,7 +746,7 @@ def get_filtered_profiles_kSZ(self, profile_leg_T, cltt_tot, ls, cl_gg, cl_taug,
     al_F_g = interp1d(ls, F_g_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_T, al_F_g
 
-def get_filters_kSZ_norm(self, cltt_tot, ls, cl_gg, cl_taug):
+def get_filters_kSZ_norm(cltt_tot, ls, cl_gg, cl_taug):
     """
     Same function as above but without profiles, for the kSZ normalization.
     CEV: TODO: see if this can be merged with the above function.
@@ -756,11 +757,11 @@ def get_filters_kSZ_norm(self, cltt_tot, ls, cl_gg, cl_taug):
         new = array[2:]
         return np.interp(np.arange(len(array)), np.arange(len(array))[2:], new)
     
-    if ls[-1]<self.lmax-1:
-        raise ValueError(f"ls and Cl spectra should be provided up to lmax of reconstruction to avoid extrapolation. ls[-1]={ls[-1]}, self.lmax={self.lmax}")
+    # if ls[-1]<self.lmax-1:
+    #     raise ValueError(f"ls and Cl spectra should be provided up to lmax of reconstruction to avoid extrapolation. ls[-1]={ls[-1]}, self.lmax={self.lmax}")
 
     F_1_of_l = smooth_low_monopoles(np.nan_to_num(1.0 / cltt_tot)) 
-    F_2_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug / cl_gg)) 
+    F_2_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug * cl_taug / cl_gg)) 
     al_F_1 = interp1d(ls, F_1_of_l, bounds_error=False,  fill_value='extrapolate') # CEV: function to get the value of F at any l
     al_F_2 = interp1d(ls, F_2_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_1, al_F_2
