@@ -420,6 +420,7 @@ class experiment:
         Returns:
             * qe_norm = 1D numpy array. Normalisation at ells_out multipoles.
         """
+        # CEV: TODO: make sure you are not missing any 2pi factors anywhere.
         # Get the filters F_1 and F_2 from new function
         al_F_1, al_F_2 = get_filters_kSZ_norm(cltt_tot=cltt_tot, ls=ls, cl_gg=cl_gg, cl_taug=cl_taug)
         F_1_array = jnp.array(al_F_1(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.

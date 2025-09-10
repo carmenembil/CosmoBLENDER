@@ -394,7 +394,6 @@ class hm_framework:
         ells_in = np.arange(0, exp_minimal.lmax + 1) # CEV: always used in pkToPell calls. I think it's small ell?
 
         # Temporary storage. CEV: nMasses is the # of steps for the mass integral, given by user at init.
-        # CEV: TODO: rename / deal with later
         itgnd_1h_cross = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         # For term one where QE acts simply on profiles
         itgnd_2h_1_2g = np.zeros([nx, hm_minimal.nMasses]) + 0j 
@@ -460,11 +459,11 @@ class hm_framework:
                                hm_minimal.ks, hm_minimal.uk_profiles['nfw'][i, j])(ells_in)
             
             # TODO: should ngal in denominator depend on z? ms_rescaled doesn't
-            # CEV: TODO: understand this ngal divide. And why it needs to be conjugated.
+            # CEV: TODO: understand why it needs to be conjugated.
             Galfft = Gal / hm_minimal.hods[survey_name]['ngal'][i]
             gfft = g / hm_minimal.hods[survey_name]['ngal'][i]
 
-            phicfft_1 = QE(y, gfft) # CEV: TODO: put here g or gfft? Think about this when you understand better QE.
+            phicfft_1 = QE(y, gfft) # CEV: TODO: does ngal depend on k? why is it going into QE?
             phicfft_2_int = QE(int_over_M_of_y, gfft) 
             phicfft_3_int = QE(y, int_over_M_of_g)
 
@@ -496,11 +495,11 @@ class hm_framework:
             # Accumulate the itgnds
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
             # 1h
-            itgnd_1h_cross[..., j] = mean_Ngal * phicfft_1_damp * mean_Ngal * np.conjugate(Galfft_damp) * hm_minimal.nzm[i, j]
+            itgnd_1h_cross[..., j] = mean_Ngal * np.conjugate(Galfft_damp) * phicfft_1_damp * mean_Ngal * hm_minimal.nzm[i, j]
             # 2h
             # 1
-            itgnd_2h_1_1g[..., j] = mean_Ngal * np.conjugate(Galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
-            itgnd_2h_1_2g[..., j] = mean_Ngal * phicfft_1 * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] # CEV: TODO: one power too many bh?
+            itgnd_2h_1_1g[..., j] = mean_Ngal * np.conjugate(Galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] # Missing P(k) here, no, see below.
+            itgnd_2h_1_2g[..., j] = mean_Ngal * phicfft_1 * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             # 2
             itgnd_2h_y_Gg[..., j] = mean_Ngal * np.conjugate(Galfft) * mean_Ngal * phicfft_2_int \
                                     * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
@@ -513,7 +512,7 @@ class hm_framework:
         oneH_cross_at_i = np.trapz(itgnd_1h_cross, hm_minimal.ms, axis=-1)
         # 2h CEV: strange way of doing it but ok.
         thoH_cross_1_1 = np.trapz(itgnd_2h_1_1g, hm_minimal.ms, axis=-1)
-        # CEV: TODO: understand how this consistency is applied here. It might be needed to be applied in more places?
+        # CEV: TODO: understand how this consistency is applied in general. Make sure it's applied consistently.
         twoH_cross_at_i = np.trapz(itgnd_2h_1_2g, hm_minimal.ms, axis=-1) * (thoH_cross_1_1 + hm_minimal.g_consistency[i]) * pk_of_L \
                           + np.trapz(itgnd_2h_y_Gg, hm_minimal.ms, axis=-1) + np.trapz(itgnd_2h_g_yG, hm_minimal.ms, axis=-1)
         return oneH_cross_at_i, twoH_cross_at_i
