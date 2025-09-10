@@ -162,7 +162,7 @@ class experiment:
                 assert not (MV_ILC_bool and (deproject_tSZ or deproject_CIB)), 'Only one ILC type at a time!'
                 self.get_ilc_weights()
             # Compute total TT power (incl. noise, fgs, cmb) for use in inverse-variance filtering
-            self.get_total_TT_power()
+            self.get_total_TT_power() # CEV: this gives you self.cltt_tot
 
             # Calculate inverse-variance filters
             self.inverse_variance_filters()
@@ -334,6 +334,7 @@ class experiment:
         # CEV: This function is never called in qest.py. It is called everytime you call to compute a bias. Given that this only depends on ell stuff I wonder why not call once here when you initialize qest and then use whenever. Because of being able to call different ells_out every time presumably. Not really because it's defined at initialization of biases anyway.
         ''' Get the matrices needed for Gaussian quadrature of QE integral '''
         self.weights_mat_total = device_put(jnp.array([self.weights_mat_at_L(L) for L in ells_out]))
+        self.get_qe_ksz_norm(self.nodes, self.cl_gg, self.cl_taug, self.cltt_tot, self.ls) if self.estimator == "ksz_vel" else None
 
     def weights_mat_at_L(self, L): 
         # CEV: This computes the weights for equation C.12 as a function of L. In particular: w_i * w_j * W(L,l_i,l_j) given you already have w and W
@@ -419,13 +420,14 @@ class experiment:
         Returns:
             * qe_norm = 1D numpy array. Normalisation at ells_out multipoles.
         """
-
         # Get the filters F_1 and F_2 from new function
         al_F_1, al_F_2 = get_filters_kSZ_norm(cltt_tot=cltt_tot, ls=ls, cl_gg=cl_gg, cl_taug=cl_taug)
         F_1_array = jnp.array(al_F_1(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
         F_2_array = jnp.array(al_F_2(nodes).astype(np.float32))
-
-        self.qe_ksz_norm = self.QE_via_quad(F_1_array, F_2_array)
+        # print("F_1_array ",F_1_array) THESE WORK
+        # print("F_2_array ",F_2_array)
+        norm = self.QE_via_quad(F_1_array, F_2_array)
+        self.qe_ksz_norm = norm
 
     def get_nlpp(self, lmin=30, lmax=3000, bin_width=30):
         # TODO: adapt  the lmax of these bins to the lmax_out of hm_object
@@ -561,9 +563,10 @@ class experiment:
         unnorm_ksz_qe = self.QE_via_quad(F_T_array, F_g_array) # CEV: already gives result at ells_out through weights_mat_total
 
         # CEV: in principle, no need for convention correction if normalization has been computed consistently.
-        qe_ksz_norm = self.get_qe_ksz_norm(nodes, cl_gg, cl_taug, cltt_tot, ls)
-
-        return np.nan_to_num(unnorm_ksz_qe / qe_ksz_norm)
+        # CEV: not calling this here anymore, as get_weights_mat_total calls it when initializing biases.
+        # self.get_qe_ksz_norm(nodes, cl_gg, cl_taug, cltt_tot, ls)
+        qe_ksz_norm_jx = jnp.array(self.qe_ksz_norm.astype(np.float32))
+        return np.nan_to_num(unnorm_ksz_qe / qe_ksz_norm_jx)
 
     def QE_via_quad(self, F_1_array, F_2_array):
         '''

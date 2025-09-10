@@ -338,7 +338,6 @@ class hm_framework:
         # Get the nodes, weights and matrices needed for Gaussian quadrature of QE integral
         exp.get_weights_mat_total(ells_out)
 
-        # CEV: TODO: some length for future variables?
         nx = len(ells_out)
 
         # Get frequency scaling of tSZ, possibly including harmonic ILC cleaning
@@ -369,7 +368,7 @@ class hm_framework:
 
         # Integrate over z
         # CEV: TODO: potentially put T_CMB inside y_window?
-        # CEV: TODO: allow G and g to be different. 
+        # CEV: TODO: eventually allow G and g to be different. For now this will be first approximation.
         gyg_intgrnd = self.T_CMB * tls.limber_itgrnd_kernel(hcos, 3) \
                       * tls.gal_window(hcos, hcos.zs, gzs, gdndz) * tls.y_window(hcos) * tls.gal_window(hcos, hcos.zs, gzs, gdndz)
         
@@ -397,10 +396,16 @@ class hm_framework:
         # Temporary storage. CEV: nMasses is the # of steps for the mass integral, given by user at init.
         # CEV: TODO: rename / deal with later
         itgnd_1h_cross = np.zeros([nx, hm_minimal.nMasses]) + 0j 
-        itgnd_2h_2g = np.zeros([nx, hm_minimal.nMasses]) + 0j 
-        itgnd_2h_1g = np.zeros([nx, hm_minimal.nMasses]) + 0j 
-        itgnd_2h_ky_y = itgnd_1h_cross.copy();
+        # For term one where QE acts simply on profiles
+        itgnd_2h_1_2g = np.zeros([nx, hm_minimal.nMasses]) + 0j 
+        itgnd_2h_1_1g = np.zeros([nx, hm_minimal.nMasses]) + 0j 
+        # For terms where first mass int has to be done before QE
+        itgnd_2h_y_Gg = itgnd_1h_cross.copy(); # to store the already integrated over M profile after gone through QE * all prefactors and such
+        # itgnd_2h_y_Gg = np.zeros([nx, hm_minimal.nMasses]) + 0j 
+        itgnd_2h_g_yG = itgnd_1h_cross.copy();
+        # The integrands for the first M int
         itgnd_y_for_2hbispec = np.zeros([exp_minimal.lmax + 1, hm_minimal.nMasses]) 
+        itgnd_g_for_2hbispec = np.zeros([exp_minimal.lmax + 1, hm_minimal.nMasses]) 
 
         # To keep QE calls tidy
         QE = lambda prof_T, prof_g: exp_minimal.get_kSZ_qe(prof_T, prof_g, 
@@ -416,13 +421,26 @@ class hm_framework:
         # Integral over M for 2halo bispectrum. This will later go into a QE
         for j, m in enumerate(hm_minimal.ms):
             if m > exp_minimal.massCut: continue
+
+            # Mean number of galaxies in a halo of mass m at redshift i to be applied to nfw profiles
+            mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
     
             y = exp_minimal.tsz_filter * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                                       hm_minimal.pk_profiles['y'][i, j])(ells_in) # = y_{3D}(l/chi, M=j, z=i)
             itgnd_y_for_2hbispec[..., j] = y * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
+            g = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
+                             hm_minimal.uk_profiles['nfw'][i, j])(ells_in) # = u_{3D}(l/chi, M=j, z=i)
+
+            gfft = g / hm_minimal.hods[survey_name]['ngal'][i]
+
+            itgnd_g_for_2hbispec[..., j] = mean_Ngal * np.conjugate(gfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+
         int_over_M_of_y = pk_of_l * (
                     np.trapz(itgnd_y_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.y_consistency[i])
+        
+        int_over_M_of_g = pk_of_l * (
+                    np.trapz(itgnd_g_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.g_consistency[i]) # CEV: g_consistency = 0 if gal_consistency = False.
 
         # M integral.
         # CEV: ms is array of masses from mmin to mmax in nMasses steps, for integration, given by user at init.
@@ -435,51 +453,69 @@ class hm_framework:
             
             # Get the galaxy map --- analogous to kappa in the auto-biases. Note that we need a factor of
             # H dividing the galaxy window function to translate the hmvec convention to e.g. Ferraro & Hill 18 #TODO: why do you say that?
-            gal = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
+            Gal = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
                                hm_minimal.ks, hm_minimal.uk_profiles['nfw'][i, j])(ells_out)
+            
+            g = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
+                               hm_minimal.ks, hm_minimal.uk_profiles['nfw'][i, j])(ells_in)
+            
             # TODO: should ngal in denominator depend on z? ms_rescaled doesn't
-            # CEV: TODO: understand this ngal divide.
-            galfft = gal / hm_minimal.hods[survey_name]['ngal'][i] 
+            # CEV: TODO: understand this ngal divide. And why it needs to be conjugated.
+            Galfft = Gal / hm_minimal.hods[survey_name]['ngal'][i]
+            gfft = g / hm_minimal.hods[survey_name]['ngal'][i]
 
-            phicfft = QE(y, y)
-            phicfft_y_intofy = QE(y, int_over_M_of_y)
+            phicfft_1 = QE(y, gfft) # CEV: TODO: put here g or gfft? Think about this when you understand better QE.
+            phicfft_2_int = QE(int_over_M_of_y, gfft) 
+            phicfft_3_int = QE(y, int_over_M_of_g)
 
-            # Consider damping the profiles at low k in 1h terms to avoid it exceeding many-halo amplitude
+            # Consider damping the profiles at low k in 1h terms to avoid it exceeding many-halo amplitude 
             if damp_1h_prof:
                 y_damp = exp_minimal.tsz_filter \
                          * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                         hm_minimal.pk_profiles['y'][i, j]
                                         * (1 - np.exp(-(hm_minimal.ks / hm_minimal.p['kstar_damping']))))(ells_in)
-                gal_damp = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
+                Gal_damp = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                         hm_minimal.uk_profiles['nfw'][i, j]
                                         * (1 - np.exp(-(hm_minimal.ks / hm_minimal.p['kstar_damping']))))(ells_out)
-                galfft_damp = gal_damp / hm_minimal.hods[survey_name]['ngal'][i] 
+                g_damp = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
+                                        hm_minimal.uk_profiles['nfw'][i, j]
+                                        * (1 - np.exp(-(hm_minimal.ks / hm_minimal.p['kstar_damping']))))(ells_in)
                 
-                phicfft_damp = QE(y_damp, y_damp) # CEV: only this one is needed for correcting 1h.
+                Galfft_damp = Gal_damp / hm_minimal.hods[survey_name]['ngal'][i] 
+                gfft_damp = g_damp / hm_minimal.hods[survey_name]['ngal'][i] 
+
+                phicfft_1_damp = QE(y_damp, gfft_damp) # CEV: only this one is needed for correcting 1h.
             else:
-                y_damp = y;
-                gal_damp = gal;
-                galfft_damp = galfft;
-                phicfft_damp = phicfft
+                y_damp = y; 
+                g_damp = g; 
+                Gal_damp = Gal
+
+                Galfft_damp = Galfft
+                phicfft_1_damp = phicfft_1
 
             # Accumulate the itgnds
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
             # 1h
-            itgnd_1h_cross[..., j] = mean_Ngal * phicfft_damp * np.conjugate(galfft_damp) * hm_minimal.nzm[i, j]
+            itgnd_1h_cross[..., j] = mean_Ngal * phicfft_1_damp * mean_Ngal * np.conjugate(Galfft_damp) * hm_minimal.nzm[i, j]
             # 2h
-            itgnd_2h_1g[..., j] = mean_Ngal * np.conjugate(galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
-            itgnd_2h_2g[..., j] = phicfft * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
-            itgnd_2h_ky_y[..., j] = mean_Ngal * np.conjugate(galfft) * phicfft_y_intofy \
+            # 1
+            itgnd_2h_1_1g[..., j] = mean_Ngal * np.conjugate(Galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_2h_1_2g[..., j] = mean_Ngal * phicfft_1 * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] # CEV: TODO: one power too many bh?
+            # 2
+            itgnd_2h_y_Gg[..., j] = mean_Ngal * np.conjugate(Galfft) * mean_Ngal * phicfft_2_int \
+                                    * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            # 3
+            itgnd_2h_g_yG[..., j] = mean_Ngal * np.conjugate(Galfft) * phicfft_3_int \
                                     * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
         # Perform the m integrals
         # 1h
         oneH_cross_at_i = np.trapz(itgnd_1h_cross, hm_minimal.ms, axis=-1)
         # 2h CEV: strange way of doing it but ok.
-        tmpCorr = np.trapz(itgnd_2h_1g, hm_minimal.ms, axis=-1)
-        twoH_cross_at_i = np.trapz(itgnd_2h_2g, hm_minimal.ms, axis=-1) * (
-                    tmpCorr + hm_minimal.g_consistency[i]) * pk_of_L \
-                          + np.trapz(2 * itgnd_2h_ky_y, hm_minimal.ms, axis=-1)
+        thoH_cross_1_1 = np.trapz(itgnd_2h_1_1g, hm_minimal.ms, axis=-1)
+        # CEV: TODO: understand how this consistency is applied here. It might be needed to be applied in more places?
+        twoH_cross_at_i = np.trapz(itgnd_2h_1_2g, hm_minimal.ms, axis=-1) * (thoH_cross_1_1 + hm_minimal.g_consistency[i]) * pk_of_L \
+                          + np.trapz(itgnd_2h_y_Gg, hm_minimal.ms, axis=-1) + np.trapz(itgnd_2h_g_yG, hm_minimal.ms, axis=-1)
         return oneH_cross_at_i, twoH_cross_at_i
 
 # CIB
