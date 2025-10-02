@@ -85,7 +85,7 @@ class experiment:
         self.nlee = nlee
         self.ls = self.cl_len.ls # CEV: these ls that come from cl_len will be used across for cltt_tot but therefor also for ksz filters.
         self.lmax = lmax
-        self.lmin = 1
+        self.lmin = 1000
         self.freq_GHz = freq_GHz
 
         # CEV: CMB T for conversion of ClTT
@@ -375,6 +375,7 @@ class experiment:
         L = np.asarray(L, dtype=int)  # Ensure L is an integer
         condition = (L + l >= lp) & (L + lp >= l) & (l + lp >= L) # CEV: First two encapsulate the two options of the |l-lp|<=L , third is same.
         singular_condition = (L + l == lp) | (L + lp == l) | (l + lp == L) #CEV: exclude cases where Delta=0 to avoid infinities.
+        # singular_condition = (L + l + lp) * (-L + l + lp) * (L - l + lp) * (L + l - lp) 
 
         result = np.zeros_like(l, dtype=float)  # Initialize result array with appropriate dtype
 
@@ -393,6 +394,16 @@ class experiment:
                                             (-L+l[valid_indices]+lp[valid_indices]) * 
                                             (L-l[valid_indices]+lp[valid_indices]) * 
                                             (L+l[valid_indices]-lp[valid_indices]))**(0.5)
+            
+            square = np.zeros_like(l, dtype=float)
+            square[valid_indices] = (L+l[valid_indices]+lp[valid_indices]) * (-L+l[valid_indices]+lp[valid_indices]) * (L-l[valid_indices]+lp[valid_indices]) * (L+l[valid_indices]-lp[valid_indices])
+
+            if np.sum(square[valid_indices]<0) > 0:
+                print("Warning: negative square root encountered in ksz_vel estimator weights") # Should never happen because of triangle condition.
+
+            if np.sum(triangle[valid_indices]<1e-10) > 0:
+                print("Warning: very small triangle area encountered for L =",L) # Also not happening. Doesn't even go below 1.
+
             result[valid_indices] = l[valid_indices] * lp[valid_indices] / triangle[valid_indices]
 
         else:
@@ -433,6 +444,10 @@ class experiment:
         # print("F_2_array ",F_2_array)
         norm = self.QE_via_quad(F_1_array, F_2_array)
         self.qe_ksz_norm = norm
+
+    def get_qe_ksz_norm_check(self):
+
+        return ksz_norm_check(self.cltt_tot, self.ls, self.cl_gg, self.cl_taug,lmin = 1.0, lmax=3000.0, n_ell=4096, eps=1e-30)
 
     def get_nlpp(self, lmin=30, lmax=3000, bin_width=30):
         # TODO: adapt  the lmax of these bins to the lmax_out of hm_object
@@ -654,7 +669,7 @@ def int_func(lmax, ell_out, n, al_F_1, al_F_2):
     """
     Helper function to parallelize get_brute_force_unnorm_TT_qe()
     """
-    def ell_dependence(L, l, lp):
+    def _ell_dependence(L, l, lp):
         '''L is outter multipole'''
         if (L+l>=lp) and (L+lp>=l) and (l+lp>=L):
             #check triangle inequality
@@ -666,7 +681,7 @@ def int_func(lmax, ell_out, n, al_F_1, al_F_2):
         else:
             return 0
     def inner_integrand(lp, L, l):
-        return lp * al_F_2(lp) * ell_dependence(L, l, lp)
+        return lp * al_F_2(lp) * _ell_dependence(L, l, lp)
     def outer_integrand(l, L):
         return l * al_F_1(l) * quad(inner_integrand, 1, lmax, args=(L, l))[0]
     L = ell_out[n]
@@ -775,3 +790,33 @@ def get_filters_kSZ_norm(cltt_tot, ls, cl_gg, cl_taug):
     al_F_1 = interp1d(ls, F_1_of_l, bounds_error=False,  fill_value='extrapolate') # CEV: function to get the value of F at any l
     al_F_2 = interp1d(ls, F_2_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_1, al_F_2
+
+
+def ksz_norm_check(cltt_tot, ls, cl_gg, cl_taug,lmin = 1.0, lmax=3000.0, n_ell=4096, eps=1e-30):
+    """
+    Function to check that the kSZ normalization is working as expected.
+    Computes the analytic approximation in, e.g., eq. 14 of Kvasiuk & Munchmeyer (24).
+    Inputs:
+        * cltt_tot = 1d numpy array. Total power in observed TT fields.
+        * ls = 1d numpy array. Multipoles at which cltt_tot is defined
+        * cl_gg = 1d numpy array. Galaxy auto spectrum at ls including shot noise.
+        * cl_taug = 1d numpy array. Galaxy-electron power spectrum at ls.
+        * (optional) lmin = Float. lmin of the reconstruction. Recommend choosing (unphysical) small values
+                            (e.g., lmin=1e-4) to avoid ringing
+        * (optional) lmax = int. Maximum multipole used in the reconstruction
+        * (optional) n_ell = Int (preferrably power of 2). Number of logarithmically-spaced samples FFTlog will use.
+        * (optional) eps = Float. Small number to avoid division by zero
+    Returns:
+        * The value of λ^{-1}.
+    """
+
+    ell_grid = np.logspace(np.log10(lmin), np.log10(lmax), n_ell)
+
+    cltt_int = np.interp(ell_grid, ls, cltt_tot)
+    cltaug_int = np.interp(ell_grid, ls, cl_taug)
+    clgg_int = np.interp(ell_grid, ls, cl_gg)
+
+    denom = np.maximum(cltt_int * clgg_int, eps)
+    integrand = ell_grid * (cltaug_int**2) / denom
+    val = np.trapz(integrand, ell_grid)
+    return val
