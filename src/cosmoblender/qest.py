@@ -88,6 +88,9 @@ class experiment:
         self.lmin = 1
         self.freq_GHz = freq_GHz
 
+        # CEV: CMB T for conversion of ClTT
+        self.T_CMB = 2.7255e6
+
         #CEV: choice of estimator
         self.estimator = estimator
 
@@ -289,6 +292,7 @@ class experiment:
                 f = lambda l: self.sky.powerIlc(self.sky.weightsDeprojCIB(l), l)
             #TODO: turn zeros into infinities to avoid issues when dividing by this
             self.cltt_tot = np.interp(self.cl_unl.ls, L, np.array(list(map(f, L))))
+        self.cltt_tot = self.cltt_tot/self.T_CMB**2 # CEV: convert to dimensionless units
         # Avoid infinities when dividing by inverse variance
         self.cltt_tot[np.where(np.isnan(self.cltt_tot))] = np.inf
 
