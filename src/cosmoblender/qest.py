@@ -383,17 +383,20 @@ class experiment:
         #TODO: I've removed minus sign to get expected -ve sign at low L in prim bispec. What's up?
 
         if self.estimator == "lensing":
+            print("Using lensing weights")
             result[valid_indices] = 2 * lp[valid_indices] * l[valid_indices] * (
                     (L ** 2 + lp[valid_indices] ** 2 - l[valid_indices] ** 2) / (2 * L * lp[valid_indices])) * (1 - (
                     (L ** 2 + lp[valid_indices] ** 2 - l[valid_indices] ** 2) / (2 * L * lp[valid_indices])) ** 2) ** (
                                     -0.5)
             
         elif self.estimator == "ksz_vel":
+            ### Version 1
+            # CEV: TODO: I had to add a np.pi factor to triangle to get the value of the normalization right. Check maths carefully.
             triangle = np.zeros_like(l, dtype=float)
-            triangle[valid_indices] = 1./2 * ((L+l[valid_indices]+lp[valid_indices]) * 
+            triangle[valid_indices] = np.pi *1./2 * ((L+l[valid_indices]+lp[valid_indices]) * 
                                             (-L+l[valid_indices]+lp[valid_indices]) * 
                                             (L-l[valid_indices]+lp[valid_indices]) * 
-                                            (L+l[valid_indices]-lp[valid_indices]))**(0.5)
+                                            (L+l[valid_indices]-lp[valid_indices]))**(0.5) # CEV: OJO: potentially factor 1./4 here instead
             
             square = np.zeros_like(l, dtype=float)
             square[valid_indices] = (L+l[valid_indices]+lp[valid_indices]) * (-L+l[valid_indices]+lp[valid_indices]) * (L-l[valid_indices]+lp[valid_indices]) * (L+l[valid_indices]-lp[valid_indices])
@@ -404,11 +407,15 @@ class experiment:
             if np.sum(triangle[valid_indices]<1e-10) > 0:
                 print("Warning: very small triangle area encountered for L =",L) # Also not happening. Doesn't even go below 1.
 
+            ### Version 2
+
+            # triangle = np.zeros_like(l, dtype=float)
+            # triangle[valid_indices] = 1./2 * (4*l[valid_indices]**2 * lp[valid_indices]**2 - (L**2 - l[valid_indices]**2 - lp[valid_indices]**2)**2)**(0.5)
+
             result[valid_indices] = l[valid_indices] * lp[valid_indices] / triangle[valid_indices]
 
         else:
             raise ValueError(f"Unknown estimator: {self.estimator}. Only 'lensing' and 'ksz_vel' are supported.")
-
         return result
 
     def get_qe_norm(self, key='ptt'):
@@ -435,7 +442,8 @@ class experiment:
         Returns:
             * qe_norm = 1D numpy array. Normalisation at ells_out multipoles.
         """
-        # CEV: TODO: make sure you are not missing any 2pi factors anywhere.
+        # CEV: make sure you are not missing any 2pi factors anywhere. 
+        # CEV: Checked that the qe is normalised and pi factors should only be modified inside QE_via_quad so they are applied consistently.
         # Get the filters F_1 and F_2 from new function
         al_F_1, al_F_2 = get_filters_kSZ_norm(cltt_tot=cltt_tot, ls=ls, cl_gg=cl_gg, cl_taug=cl_taug)
         F_1_array = jnp.array(al_F_1(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
