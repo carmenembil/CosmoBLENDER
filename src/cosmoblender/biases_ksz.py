@@ -67,7 +67,7 @@ class hm_framework:
         zs = np.linspace(z_min,z_max,nZs) # redshifts
         ms = np.geomspace(m_min,m_max,nMasses) # masses
         ks = np.geomspace(k_min,k_max,nks) # wavenumbers
-        self.T_CMB = 1. # 2.7255e6 #
+        self.T_CMB = 2.7255e6 # 1. #
         self.nZs = nZs
         self.nxs = nxs
         self.xmax = xmax
@@ -201,6 +201,7 @@ class hm_framework:
         else:
             # Single-frequency scenario. Return two (nZs, nMs) array containing f_cen(M,z) and f_sat(M,z)
             # Compute \Sum_{\nu} f^{\nu}(z,M) w^{\nu, ILC}_l
+            # CEV: since: tls.from_Jypersr_to_uK returns filter in T_CMB[muK]
             self.CIB_central_filter = tls.from_Jypersr_to_uK(exp.freq_GHz)\
                                       * self.hcos._get_fcen(exp.freq_GHz*1e9)[:,:,0][np.newaxis,:,:]
             self.CIB_satellite_filter = tls.from_Jypersr_to_uK(exp.freq_GHz) \
@@ -296,6 +297,8 @@ class hm_framework:
 
 ### BIASES CALCULATIONS
 
+# CEV: TODO: potentially this can be generalized to g s g where you pick which s you want.
+
 # tSZ
     def get_tsz_cross_biases(self, exp, gzs, gdndz, bin_width_out=30, survey_name='LSST',
                              damp_1h_prof=True, gal_consistency=False, tsz_consistency=False):
@@ -367,10 +370,11 @@ class hm_framework:
             oneH_cross[...,idx], twoH_cross[...,idx] = itgnds_at_i
 
         # Integrate over z
-        # CEV: TODO: potentially put T_CMB inside y_window?
         # CEV: TODO: eventually allow G and g to be different. For now this will be first approximation.
-        gyg_intgrnd = self.T_CMB * tls.limber_itgrnd_kernel(hcos, 3) \
-                      * tls.gal_window(hcos, hcos.zs, gzs, gdndz) * tls.y_window(hcos) * tls.gal_window(hcos, hcos.zs, gzs, gdndz)
+        gyg_intgrnd = tls.limber_itgrnd_kernel(hcos, 3) \
+                        * tls.gal_window(hcos, hcos.zs, gzs, gdndz) \
+                        * tls.y_window(hcos) \
+                        * tls.gal_window(hcos, hcos.zs, gzs, gdndz)
         
         exp.biases['tsz']['cross_w_gals']['1h'] = np.trapz(oneH_cross * gyg_intgrnd, hcos.zs, axis=-1)
         exp.biases['tsz']['cross_w_gals']['2h'] = np.trapz(twoH_cross * gyg_intgrnd, hcos.zs, axis=-1)
@@ -518,7 +522,7 @@ class hm_framework:
         return oneH_cross_at_i, twoH_cross_at_i
 
 # CIB
-    def get_cib_cross_biases(self, exp, gzs, gdndz, fftlog_way=True, bin_width_out=30, survey_name='LSST',
+    def get_cib_cross_biases(self, exp, gzs, gdndz, bin_width_out=30, survey_name='LSST',
                              damp_1h_prof=True, gal_consistency=False, cib_consistency=False, max_workers=None):
         """
         Calculate the CIB biases to the cross-correlation of CMB lensing with a galaxy survey, (C^{g\phi}_L)
@@ -537,64 +541,54 @@ class hm_framework:
         """
         hcos = self.hcos
 
+        # CEV: Low mass corrections. CEV: TODO: test importance of these once code is working.
         if gal_consistency:
             self.get_galaxy_consistency(exp, survey_name)
         if cib_consistency:
             self.get_cib_consistency(exp, lmax_proj=exp.lmax)
 
         # Compute effective CIB weights, including f_cen and f_sat factors as well as possibly fg cleaning
-        self.get_CIB_filters(exp)
+        # CEV: Gets self.CIB_central_filter and self.CIB_satellite_filter , to be applied to the nfw profiles.
+        # It can also take into account multifreq foreground cleaning.
+        self.get_CIB_filters(exp) # [T_CMB muK]
 
         # Output ells
         ells_out = np.linspace(1, self.lmax_out)
         # Get the nodes, weights and matrices needed for Gaussian quadrature of QE integral
         exp.get_weights_mat_total(ells_out)
-        if not fftlog_way:
-            lbins = np.arange(1,self.lmax_out+1,bin_width_out)
 
-        #nx = self.lmax_out+1 if fftlog_way else exp.nx
-        nx = len(ells_out) if fftlog_way else exp.pix.nx
+        #nx = self.lmax_out+1
+        nx = len(ells_out)
 
         # The one and two halo bias terms -- these store the itgnd to be integrated over z
-        oneH_cross = np.zeros([nx,self.nZs])+0j if fftlog_way else np.zeros([nx,nx,self.nZs])+0j;
+        oneH_cross = np.zeros([nx,self.nZs])+0j
         twoH_cross = oneH_cross.copy()
-
-        # If using FFTLog, we can compress the normalization to 1D
-        if fftlog_way:
-            norm_bin_width = 40  # These are somewhat arbitrary
-            lmin = 1  # These are somewhat arbitrary
-            lbins = np.arange(lmin, exp.lmax, norm_bin_width)
-            exp.qe_norm_compressed = np.interp(ells_out, exp.qe_norm.get_ml(lbins).ls, exp.qe_norm.get_ml(lbins).specs['cl']).astype('float32')
-        else:
-            exp.qe_norm_compressed = exp.qe_norm
 
         # Run in parallel
         hm_minimal = Hm_minimal(self)
         exp_minimal = exp
 
         n = len(hcos.zs)
-        outputs = map(self.cib_cross_itgrnds_each_z, np.arange(n), n * [ells_out], n * [fftlog_way],
+        outputs = map(self.cib_cross_itgrnds_each_z, np.arange(n), n * [ells_out],
                                n * [damp_1h_prof], n * [exp_minimal], n * [hm_minimal], n * [survey_name])
 
         for idx, itgnds_at_i in enumerate(outputs):
             oneH_cross[...,idx], twoH_cross[...,idx] = itgnds_at_i
 
         # itgnd factors from Limber projection (adapted to hmvec conventions)
-        gII_itgnd = (tls.limber_itgrnd_kernel(hcos, 3) * tls.gal_window(hcos, hcos.zs, gzs, gdndz)
-                     * tls.CIB_window(hcos)**2)
+        # CEV: need to convert CIB from T_CMB to dimensionless.
+        # CEV: TODO: check that you've done this correctly, both central and sat have T_CMB units.
+        gIg_itgnd = tls.limber_itgrnd_kernel(hcos, 3) \
+                    * tls.gal_window(hcos, hcos.zs, gzs, gdndz) \
+                    * tls.CIB_window(hcos) / self.T_CMB \
+                    * tls.gal_window(hcos, hcos.zs, gzs, gdndz)
 
         # Integrate over z
-        exp.biases['cib']['cross_w_gals']['1h'] = np.trapz( oneH_cross*gII_itgnd, hcos.zs, axis=-1)
-        exp.biases['cib']['cross_w_gals']['2h'] = np.trapz( twoH_cross*gII_itgnd, hcos.zs, axis=-1)
+        exp.biases['cib']['cross_w_gals']['1h'] = np.trapz( oneH_cross*gIg_itgnd, hcos.zs, axis=-1)
+        exp.biases['cib']['cross_w_gals']['2h'] = np.trapz( twoH_cross*gIg_itgnd, hcos.zs, axis=-1)
 
-        if fftlog_way:
-            exp.biases['ells'] = ells_out
-            return
-        else:
-            exp.biases['ells'] = ql.maps.cfft(exp.nx,exp.dx,fft=exp.biases['cib']['trispec']['1h']).get_ml(lbins).ls
-            exp.biases['cib']['cross_w_gals']['1h'] = ql.maps.cfft(exp.nx,exp.dx,fft=exp.biases['cib']['cross_w_gals']['1h']).get_ml(lbins).specs['cl']
-            exp.biases['cib']['cross_w_gals']['2h'] = ql.maps.cfft(exp.nx,exp.dx,fft=exp.biases['cib']['cross_w_gals']['2h']).get_ml(lbins).specs['cl']
-            return
+        exp.biases['ells'] = ells_out
+        return
 
     def cib_cross_itgrnds_each_z(self, i, ells_out, fftlog_way, damp_1h_prof, exp_minimal, hm_minimal, survey_name):
         """
