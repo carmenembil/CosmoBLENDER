@@ -1872,7 +1872,7 @@ class hm_framework:
                                                                                       hm_minimal.hods[survey_name][
                                                                                           'ngal'][i]
 
-            phicfft_ucen_y = QE(u_cen, y)
+            phicfft_ucen_y = QE(u_cen, y) # CEV: the only reason you want to define these two QE separately is to deal with damping.
             phicfft_usat_y = QE(u_sat, y)
             phicfft_I_intofy = QE(u_cen + u_sat, int_over_M_of_y)
             phicfft_y_intofI = QE(y, int_over_M_of_I)
