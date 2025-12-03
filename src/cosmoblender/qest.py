@@ -391,13 +391,13 @@ class experiment:
             
         elif self.estimator == "ksz_vel":
             ### Version 1
-            # CEV: TODO: I had to add a np.pi factor to triangle to get the value of the normalization right. Check maths carefully.
             triangle = np.zeros_like(l, dtype=float)
-            triangle[valid_indices] = np.pi *1./2 * ((L+l[valid_indices]+lp[valid_indices]) * 
+            triangle[valid_indices] = 1./4 * ((L+l[valid_indices]+lp[valid_indices]) * 
                                             (-L+l[valid_indices]+lp[valid_indices]) * 
                                             (L-l[valid_indices]+lp[valid_indices]) * 
-                                            (L+l[valid_indices]-lp[valid_indices]))**(0.5) # CEV: OJO: potentially factor 1./4 here instead
+                                            (L+l[valid_indices]-lp[valid_indices]))**(0.5)
             
+            # CEV: for checks
             square = np.zeros_like(l, dtype=float)
             square[valid_indices] = (L+l[valid_indices]+lp[valid_indices]) * (-L+l[valid_indices]+lp[valid_indices]) * (L-l[valid_indices]+lp[valid_indices]) * (L+l[valid_indices]-lp[valid_indices])
 
@@ -625,7 +625,7 @@ class experiment:
             - The unnormalized lensing reconstruction at L
         '''
         # CEV: TODO: ojo with this 2pi. Not sure it's consistent with my kSZ normalization. Check.
-        return jnp.dot(self.inner_mult(F_2_array), F_1_array) / (2 * np.pi)
+        return jnp.dot(self.inner_mult(F_2_array), F_1_array)
 
     @partial(jit, static_argnums=(0,))
     def inner_mult(self, arr1):
@@ -826,5 +826,6 @@ def ksz_norm_check(cltt_tot, ls, cl_gg, cl_taug,lmin = 1.0, lmax=3000.0, n_ell=4
 
     denom = np.maximum(cltt_int * clgg_int, eps)
     integrand = ell_grid * (cltaug_int**2) / denom
-    val = np.trapz(integrand, ell_grid)
+    # CEV: 2pi coming from d^2 l = 2pi l dl
+    val = 2*np.pi*np.trapz(integrand, ell_grid)
     return val
