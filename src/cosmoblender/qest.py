@@ -455,7 +455,7 @@ class experiment:
 
     def get_qe_ksz_norm_check(self):
 
-        return ksz_norm_check(self.cltt_tot, self.ls, self.cl_gg, self.cl_taug,lmin = 1.0, lmax=3000.0, n_ell=4096, eps=1e-30)
+        return ksz_norm_check(self.cltt_tot, self.ls, self.cl_gg, self.cl_taug,lmin = 1000.0, lmax=3000.0, n_ell=4096, eps=1e-30)
 
     def get_nlpp(self, lmin=30, lmax=3000, bin_width=30):
         # TODO: adapt  the lmax of these bins to the lmax_out of hm_object
@@ -800,7 +800,7 @@ def get_filters_kSZ_norm(cltt_tot, ls, cl_gg, cl_taug):
     return al_F_1, al_F_2
 
 
-def ksz_norm_check(cltt_tot, ls, cl_gg, cl_taug,lmin = 1.0, lmax=3000.0, n_ell=4096, eps=1e-30):
+def ksz_norm_check(cltt_tot, ls, cl_gg, cl_taug,lmin = 1000.0, lmax=3000.0, n_ell=4096, eps=1e-30):
     """
     Function to check that the kSZ normalization is working as expected.
     Computes the analytic approximation in, e.g., eq. 14 of Kvasiuk & Munchmeyer (24).

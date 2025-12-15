@@ -205,6 +205,80 @@ def get_DESI_surface_ngal_of_z(sample, n_of_z_dir='/home/ce425/rds/rds-dirac-dp0
     return (zmax + zmin) / 2., surface_ngal_of_z
 
 
+def get_hmvec_ngal_from_DESI(sample,
+                             zs_target,
+                             n_of_z_dir='/home/ce425/rds/rds-dirac-dp002/ce425/ksz_biases/data/DESI_dndzs/',
+                             cosmo=Planck18,
+                             return_extra=False):
+    """
+    Construct a comoving number density ngal(z) suitable for hmvec.add_hod(ngal=...)
+    from a DESI n(z) file.
+
+    Parameters
+    ----------
+    sample : str
+        DESI sample name, e.g. 'bgs', 'lrg', 'elg', etc.
+        This must match the 'nz_{}_final.dat'.format(sample) file name.
+    zs_target : array_like
+        Redshift array on which you want ngal(z) evaluated.
+        This would be hcos.zs from hmvec.
+    n_of_z_dir : str, optional
+        Directory containing 'nz_{}_final.dat' files.
+    cosmo : astropy.cosmology instance, optional
+        Cosmology to use. Default: Planck18.
+    return_extra : bool, optional
+        If True, also return (z_mid, ngal_Mpc3) for debugging / plotting.
+
+    Returns
+    -------
+    ngal_h3Mpc3_interp : ndarray
+        Comoving number density ngal(z) evaluated on zs_target,
+        in units of h^3 Mpc^{-3}, suitable for hmvec.add_hod(ngal=...).
+
+    If return_extra=True, also returns:
+    z_mid : ndarray
+        Midpoint redshifts of the DESI bins.
+    ngal_Mpc3 : ndarray
+        Comoving number density on z_mid in physical Mpc^{-3} units.
+    """
+    # Load DESI n(z) table: columns are zmin, zmax, N_bin_per_deg2
+    table = np.loadtxt(n_of_z_dir + f'nz_{sample}_final.dat', skiprows=1)
+    zmin = table[:, 0]
+    zmax = table[:, 1]
+    N_bin_deg2 = table[:, 2]  # number of galaxies per deg^2 in each bin
+
+    # Midpoint and bin width
+    z_mid = 0.5 * (zmin + zmax)
+    dz = zmax - zmin
+
+    # dN/dz per deg^2
+    dNdz_deg2 = N_bin_deg2 #/ dz  # [gal / deg^2 / unit-z]
+
+    # Convert deg^2 -> sr
+    deg2_to_sr = (np.pi / 180.0)**2
+    dNdz_sr = dNdz_deg2 / deg2_to_sr  # [gal / sr / unit-z]
+
+    # Differential comoving volume element dV_c / (dz dΩ) in Mpc^3 / sr
+    # astropy returns Quantity with units Mpc^3 / sr / unit-z
+    dVc_dz_dOmega = cosmo.differential_comoving_volume(z_mid)  # Quantity
+
+    # Comoving number density in physical units: n(z) = (dN/dz/dΩ) / (dV_c/dz/dΩ)
+    ngal_Mpc3 = dNdz_sr / dVc_dz_dOmega.to(u.Mpc**3 / u.sr).value  # [Mpc^{-3}]
+
+    # Interpolate onto target z grid, padding with zeros outside DESI range
+    ngal_Mpc3_interp = np.interp(zs_target, z_mid, ngal_Mpc3, left=0.0, right=0.0)
+
+    # Convert to h^3 Mpc^{-3} (hmvec usually works in h units)
+    h = cosmo.H0.value / 100.0
+    ngal_h3Mpc3_interp = ngal_Mpc3_interp * h**3
+
+    if return_extra:
+        return ngal_h3Mpc3_interp, z_mid, ngal_Mpc3
+    else:
+        return ngal_h3Mpc3_interp
+
+
+
 def comoving_density_single_bin(ntot, z_low, z_hi, area, H0=68., Om0=0.3, error=False):
     '''
     Calculate co-moving number density. From Rongpu Zhou
