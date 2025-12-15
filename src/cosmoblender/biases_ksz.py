@@ -301,7 +301,7 @@ class hm_framework:
 # CEV: TODO: potentially this can be generalized to g s g where you pick which s you want.
 
 # tSZ
-    def get_tsz_cross_biases(self, exp, gzs, gdndz, bin_width_out=30, survey_name='LSST',
+    def get_tsz_cross_biases(self, exp, gzs, gdndz, gzs2=None, gdndz2=None, bin_width_out=30, survey_name='LSST',
                              damp_1h_prof=True, gal_consistency=False, tsz_consistency=False):
         """
         Calculate the tsz biases to the cross-correlation of CMB lensing with a galaxy survey, (C^{g\phi}_L)
@@ -336,6 +336,19 @@ class hm_framework:
             self.get_tsz_consistency(exp, lmax_proj=exp.lmax)
         if gal_consistency:
             self.get_galaxy_consistency(exp, survey_name)
+
+        # CEV: incorporate new redshift for galaxy tracer. Useful flags:
+        if gzs2 is None and gdndz2 is not None:
+            print("gzs2 is None but gdndz2 is not None. Assuming zs for tracer 2 are the same as tracer 1")
+            gzs2 = np.copy(gzs)
+        elif gzs2 is None and gdndz2 is None:
+            print("gdndz2 and gzs2 not provided. Assuming same as gzs and gdndz")
+            gdndz2 = np.copy(gdndz)
+            gzs2 = np.copy(gzs)
+        elif gzs2 is not None and gdndz2 is None:
+            raise ValueError("gzs2 is provided but gdndz2 is None. Did you forget about it?")
+        elif gzs2 is not None and gdndz2 is not None:
+            print("Using provided gzs2 and gdndz2.")
 
         # Output ells
         ells_out = np.linspace(1, self.lmax_out)
@@ -375,7 +388,7 @@ class hm_framework:
         gyg_intgrnd = tls.limber_itgrnd_kernel(hcos, 3) \
                         * tls.gal_window(hcos, hcos.zs, gzs, gdndz) \
                         * tls.y_window(hcos) \
-                        * tls.gal_window(hcos, hcos.zs, gzs, gdndz)
+                        * tls.gal_window(hcos, hcos.zs, gzs2, gdndz2)
         
         exp.biases['tsz']['cross_w_gals']['1h'] = np.trapz(oneH_cross * gyg_intgrnd, hcos.zs, axis=-1)
         exp.biases['tsz']['cross_w_gals']['2h'] = np.trapz(twoH_cross * gyg_intgrnd, hcos.zs, axis=-1)
@@ -522,7 +535,7 @@ class hm_framework:
         return oneH_cross_at_i, twoH_cross_at_i
 
 # CIB
-    def get_cib_cross_biases(self, exp, gzs, gdndz, bin_width_out=30, survey_name='LSST',
+    def get_cib_cross_biases(self, exp, gzs, gdndz, gzs2, gdndz2, bin_width_out=30, survey_name='LSST',
                              damp_1h_prof=True, gal_consistency=False, cib_consistency=False, max_workers=None):
         """
         Calculate the CIB biases to the cross-correlation of CMB lensing with a galaxy survey, (C^{g\phi}_L)
@@ -546,6 +559,19 @@ class hm_framework:
             self.get_galaxy_consistency(exp, survey_name)
         if cib_consistency:
             self.get_cib_consistency(exp, lmax_proj=exp.lmax)
+
+        # CEV: incorporate new redshift for galaxy tracer. Useful flags:
+        if gzs2 is None and gdndz2 is not None:
+            print("gzs2 is None but gdndz2 is not None. Assuming zs for tracer 2 are the same as tracer 1")
+            gzs2 = np.copy(gzs)
+        elif gzs2 is None and gdndz2 is None:
+            print("gdndz2 and gzs2 not provided. Assuming same as gzs and gdndz")
+            gdndz2 = np.copy(gdndz)
+            gzs2 = np.copy(gzs)
+        elif gzs2 is not None and gdndz2 is None:
+            raise ValueError("gzs2 is provided but gdndz2 is None. Did you forget about it?")
+        elif gzs2 is not None and gdndz2 is not None:
+            print("Using provided gzs2 and gdndz2.")
 
         # Compute effective CIB weights, including f_cen and f_sat factors as well as possibly fg cleaning
         # CEV: Gets self.CIB_central_filter and self.CIB_satellite_filter , to be applied to the nfw profiles.
@@ -581,7 +607,7 @@ class hm_framework:
         gIg_itgnd = tls.limber_itgrnd_kernel(hcos, 3) \
                     * tls.gal_window(hcos, hcos.zs, gzs, gdndz) \
                     * tls.CIB_window(hcos) / self.T_CMB \
-                    * tls.gal_window(hcos, hcos.zs, gzs, gdndz)
+                    * tls.gal_window(hcos, hcos.zs, gzs2, gdndz2)
 
         # Integrate over z
         exp.biases['cib']['cross_w_gals']['1h'] = np.trapz( oneH_cross*gIg_itgnd, hcos.zs, axis=-1)
