@@ -594,7 +594,7 @@ class experiment:
         # CEV: not calling this here anymore, as get_weights_mat_total calls it when initializing biases.
         # self.get_qe_ksz_norm(nodes, cl_gg, cl_taug, cltt_tot, ls)
         qe_ksz_norm_jx = jnp.array(self.qe_ksz_norm.astype(np.float32))
-        return np.nan_to_num(unnorm_ksz_qe / qe_ksz_norm_jx)
+        return -np.nan_to_num(unnorm_ksz_qe / qe_ksz_norm_jx) # CEV: minus sign to match Fiona's convention
 
     def QE_via_quad(self, F_1_array, F_2_array):
         '''

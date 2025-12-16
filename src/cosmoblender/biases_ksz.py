@@ -39,7 +39,7 @@ class hm_framework:
         """ Inputs:
                 * lmax_out = int. Maximum multipole (L) at which to return the lensing reconstruction
                 * m_min = Minimum virial mass for the halo model calculation
-                * m_max = Maximum virial mass for the halo model calculation (bot that massCut_Mvir will overide this)
+                * m_max = Maximum virial mass for the halo model calculation (note that massCut_Mvir will overide this)
                 * nMasses = Integer. Number of steps in mass for the integrals
                 * z_min = Minimum redshift for the halo model calc
                 * z_max = Maximum redshift for the halo model calc
@@ -535,7 +535,7 @@ class hm_framework:
         return oneH_cross_at_i, twoH_cross_at_i
 
 # CIB
-    def get_cib_cross_biases(self, exp, gzs, gdndz, gzs2, gdndz2, bin_width_out=30, survey_name='LSST',
+    def get_cib_cross_biases(self, exp, gzs, gdndz, gzs2=None, gdndz2=None, bin_width_out=30, survey_name='LSST',
                              damp_1h_prof=True, gal_consistency=False, cib_consistency=False, max_workers=None):
         """
         Calculate the CIB biases to the cross-correlation of CMB lensing with a galaxy survey, (C^{g\phi}_L)
