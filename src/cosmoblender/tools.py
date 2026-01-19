@@ -79,7 +79,7 @@ def split_positive_negative(spectrum):
 def pkToPell(chi,ks,pk):
     # State that the argument in P(k) is P(k*chi), and then set l=k*chi so that P(l/chi)
     # CEV: gives a function of ell that returns pk at a given ell.
-    # CEV: TODO assumed limber?
+    # CEV: TODO assumed limber.
     return interp1d(ks*chi - 0.5,pk,kind='cubic',bounds_error=False,fill_value=0)
 
 def cl2cfft_mod(cl, pix, ls=None, right=0, left=None):
@@ -205,11 +205,11 @@ def get_DESI_surface_ngal_of_z(sample, n_of_z_dir='/home/ce425/rds/rds-dirac-dp0
     return (zmax + zmin) / 2., surface_ngal_of_z
 
 
-def get_hmvec_ngal_from_DESI(sample,
-                             zs_target,
-                             n_of_z_dir='/home/ce425/rds/rds-dirac-dp002/ce425/ksz_biases/data/DESI_dndzs/',
-                             cosmo=Planck18,
-                             return_extra=False):
+def get_hmvec_ngal_from_DESI(zs_target,
+                             dz,
+                             z_mid,
+                             N_bin_deg2,
+                             cosmo=Planck18):
     """
     Construct a comoving number density ngal(z) suitable for hmvec.add_hod(ngal=...)
     from a DESI n(z) file.
@@ -241,18 +241,10 @@ def get_hmvec_ngal_from_DESI(sample,
     ngal_Mpc3 : ndarray
         Comoving number density on z_mid in physical Mpc^{-3} units.
     """
-    # Load DESI n(z) table: columns are zmin, zmax, N_bin_per_deg2
-    table = np.loadtxt(n_of_z_dir + f'nz_{sample}_final.dat', skiprows=1)
-    zmin = table[:, 0]
-    zmax = table[:, 1]
-    N_bin_deg2 = table[:, 2]  # number of galaxies per deg^2 in each bin
-
-    # Midpoint and bin width
-    z_mid = 0.5 * (zmin + zmax)
-    dz = zmax - zmin
+    N_bin_deg2 = np.array(N_bin_deg2)
 
     # dN/dz per deg^2
-    dNdz_deg2 = N_bin_deg2 #/ dz  # [gal / deg^2 / unit-z]
+    dNdz_deg2 = N_bin_deg2 / dz  # [gal / deg^2 / unit-z]
 
     # Convert deg^2 -> sr
     deg2_to_sr = (np.pi / 180.0)**2
@@ -263,7 +255,7 @@ def get_hmvec_ngal_from_DESI(sample,
     dVc_dz_dOmega = cosmo.differential_comoving_volume(z_mid)  # Quantity
 
     # Comoving number density in physical units: n(z) = (dN/dz/dΩ) / (dV_c/dz/dΩ)
-    ngal_Mpc3 = dNdz_sr / dVc_dz_dOmega.to(u.Mpc**3 / u.sr).value  # [Mpc^{-3}]
+    ngal_Mpc3 = dNdz_sr / dVc_dz_dOmega.to(u.Mpc**3 / u.sr).value  # [Mpc^{-3}] # CEV: no actual need for unit change
 
     # Interpolate onto target z grid, padding with zeros outside DESI range
     ngal_Mpc3_interp = np.interp(zs_target, z_mid, ngal_Mpc3, left=0.0, right=0.0)
@@ -272,10 +264,7 @@ def get_hmvec_ngal_from_DESI(sample,
     h = cosmo.H0.value / 100.0
     ngal_h3Mpc3_interp = ngal_Mpc3_interp * h**3
 
-    if return_extra:
-        return ngal_h3Mpc3_interp, z_mid, ngal_Mpc3
-    else:
-        return ngal_h3Mpc3_interp
+    return ngal_h3Mpc3_interp, ngal_Mpc3_interp
 
 
 

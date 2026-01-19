@@ -131,6 +131,7 @@ class hm_framework:
         I = np.trapz(self.hcos.nzm*self.hcos.bh*self.hcos.ms/self.hcos.rho_matter_z(0)*mMask,self.hcos.ms, axis=-1)
         W_of_Mlow = (self.hcos.hods[survey_name]['Nc'][:, 0] + self.hcos.hods[survey_name]['Ns'][:, 0])[:,None]\
                     / self.hcos.hods[survey_name]['ngal'][:,None] * ugal_proj_of_Mlow # A function of z and k
+        W_of_Mlow = np.nan_to_num(W_of_Mlow)
         self.g_consistency = ((1 - I)/(self.hcos.ms[0]/self.hcos.rho_matter_z(0)))[:,None]*W_of_Mlow #Function of z & k
 
     def get_tsz_consistency(self, exp, lmax_proj=None):
@@ -255,6 +256,8 @@ class hm_framework:
                                                                                              i]
                 kfft = kap*self.ms_rescaled[j] if fftlog_way else ql.spec.cl2cfft(kap,exp.pix).fft*self.ms_rescaled[j]
 
+                galfft = np.nan_to_num(galfft)
+
                 # CEV: TODO: this actually has a big impact at low L. Check how accurate it is, it looks good but i need to have it more clear.
                 if damp_1h_prof:
                     gal_damp = tls.pkToPell(hcos.comoving_radial_distance(hcos.zs[i]),
@@ -266,6 +269,7 @@ class hm_framework:
                                                                                                         exp.pix).fft / \
                                                                                         hcos.hods[survey_name]['ngal'][
                                                                                             i]
+                    galfft_damp = np.nan_to_num(galfft_damp)
                     kfft_damp = kap_damp * self.ms_rescaled[j] if fftlog_way else ql.spec.cl2cfft(kap_damp,
                                                                                                   exp.pix).fft * \
                                                                                   self.ms_rescaled[j]
@@ -449,6 +453,7 @@ class hm_framework:
                              hm_minimal.uk_profiles['nfw'][i, j])(ells_in) # = u_{3D}(l/chi, M=j, z=i)
 
             gfft = g / hm_minimal.hods[survey_name]['ngal'][i]
+            gfft = np.nan_to_num(gfft)
 
             itgnd_g_for_2hbispec[..., j] = mean_Ngal * np.conjugate(gfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
@@ -478,7 +483,9 @@ class hm_framework:
             # TODO: should ngal in denominator depend on z? ms_rescaled doesn't
             # CEV: TODO: understand why it needs to be conjugated.
             Galfft = Gal / hm_minimal.hods[survey_name]['ngal'][i]
+            Galfft = np.nan_to_num(Galfft)
             gfft = g / hm_minimal.hods[survey_name]['ngal'][i]
+            gfft = np.nan_to_num(gfft)
 
             phicfft_1 = QE(y, gfft) # CEV: TODO: does ngal depend on k? why is it going into QE?
             phicfft_2_int = QE(int_over_M_of_y, gfft) 
@@ -498,7 +505,9 @@ class hm_framework:
                                         * (1 - np.exp(-(hm_minimal.ks / hm_minimal.p['kstar_damping']))))(ells_in)
                 
                 Galfft_damp = Gal_damp / hm_minimal.hods[survey_name]['ngal'][i] 
+                Galfft_damp = np.nan_to_num(Galfft_damp)
                 gfft_damp = g_damp / hm_minimal.hods[survey_name]['ngal'][i] 
+                gfft_damp = np.nan_to_num(gfft_damp)
 
                 phicfft_1_damp = QE(y_damp, gfft_damp) # CEV: only this one is needed for correcting 1h.
             else:
@@ -672,6 +681,7 @@ class hm_framework:
             g = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                              hm_minimal.uk_profiles['nfw'][i, j])(ells_in) # = u_{3D}(l/chi, M=j, z=i)
             gfft = g / hm_minimal.hods[survey_name]['ngal'][i]
+            gfft = np.nan_to_num(gfft)
 
             itgnd_g_for_2hbispec[..., j] = mean_Ngal * np.conjugate(gfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
@@ -702,7 +712,9 @@ class hm_framework:
 
             # CEV: TODO: understand why it needs to be conjugated.
             Galfft = Gal / hm_minimal.hods[survey_name]['ngal'][i]
+            Galfft = np.nan_to_num(Galfft)
             gfft = g / hm_minimal.hods[survey_name]['ngal'][i]
+            gfft = np.nan_to_num(gfft)
 
             # CEV: TODO: for now I'll ignore damping.
             phicfft_1 = QE(u_cen + u_sat, gfft)
@@ -726,7 +738,9 @@ class hm_framework:
                                         * (1 - np.exp(-(hm_minimal.ks / hm_minimal.p['kstar_damping']))))(ells_in)
 
                 Galfft_damp = Gal_damp / hm_minimal.hods[survey_name]['ngal'][i] 
+                Galfft_damp = np.nan_to_num(Galfft_damp)
                 gfft_damp = g_damp / hm_minimal.hods[survey_name]['ngal'][i] 
+                gfft_damp = np.nan_to_num(gfft_damp)
 
                 # CEV: ASK: Anton why he doesn't damp u_cen.
                 phicfft_ucen_g_damp = QE(u_cen, gfft_damp)

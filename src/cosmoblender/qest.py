@@ -42,7 +42,7 @@ class experiment:
                  deproject_CIB=False, bare_bones=False, nlee=None,
                  gauss_order=1000,
                  estimator="lensing",                                   # CEV add flag to swap lensing and kSZ
-                 ls_gal_cls = None, cl_gg = None, cl_taug = None):  # CEV: spectra and corresponding ells for kSZ QE filters and norm.
+                 ls_gal_cls = None, cl_gg = None, cl_taug = None, clTT = None):  # CEV: spectra and corresponding ells for kSZ QE filters and norm.
         """ Initialise a cosmology and experimental charactierstics
             - Inputs:
                 * nlev_t = np array. Temperature noise level, in uK.arcmin. Either single value or one for each freq
@@ -73,6 +73,7 @@ class experiment:
                 * (optional) ls_gal_cls = 1D numpy array. Multipoles at which cl_gg and cl_taug are defined. Needed if estimator="ksz_vel"
                 * (optional) cl_gg = 1D numpy array. Galaxy auto spectrum at ls_gal_cls including shot noise. Needed if estimator="ksz_vel"
                 * (optional) cl_taug = 1D numpy array. Cross-spectrum of electron optical depth and galaxy overdensity at ls_gal_cls. Needed if estimator="ksz_vel"
+                * (optional) clTT = 1D numpy array. CMB temperature auto spectrum at ls_gal_cls including noise and lensing. Needed if estimator="ksz_vel"
         """
         if fname_scalar is None:
             fname_scalar = None#'~/Software/Quicklens-with-fixes/quicklens/data\/cl/planck_wp_highL/planck_lensing_wp_highL_bestFit_20130627_scalCls.dat'
@@ -85,7 +86,7 @@ class experiment:
         self.nlee = nlee
         self.ls = self.cl_len.ls # CEV: these ls that come from cl_len will be used across for cltt_tot but therefor also for ksz filters.
         self.lmax = lmax
-        self.lmin = 1000
+        self.lmin = 500
         self.freq_GHz = freq_GHz
 
         # CEV: CMB T for conversion of ClTT
@@ -94,12 +95,13 @@ class experiment:
         #CEV: choice of estimator
         self.estimator = estimator
 
-        # CEV: Requiere and interpolate cl_gg and cl_taug if using ksz_vel estimator to ls to match cltt_tot.
+        # CEV: Requiere and interpolate cl_gg, cl_taug, and clTT if using ksz_vel estimator to match ls.
         if self.estimator == "ksz_vel":
             # Flags for ksz_vel case
             assert ls_gal_cls is not None, "Please provide ls_gal_cls when using ksz_vel estimator"
             assert cl_gg is not None, "Please provide cl_gg when using ksz_vel estimator"
             assert cl_taug is not None, "Please provide cl_taug when using ksz_vel estimator"
+            # assert clTT is not None, "Please provide clTT when using ksz_vel estimator"
 
             # Ensure ls_gal_cls goes up to at least lmax
             if ls_gal_cls[-1] < self.lmax:
@@ -108,6 +110,8 @@ class experiment:
             # Directly interpolate cl_gg and cl_taug to self.ls
             self.cl_gg = np.interp(self.ls, ls_gal_cls, cl_gg, left=0., right=0.)       # CEV: I think there are enough flags for these left and right to never be used. If they are it will probably break the filters (~1/cl_gg).
             self.cl_taug = np.interp(self.ls, ls_gal_cls, cl_taug, left=0., right=0.)
+            if clTT is not None:
+                self.cltt_tot = np.interp(self.ls, ls_gal_cls, clTT, left=0., right=0.)
 
         # Hyperparams for analytic QE calculation
         self.gauss_order = gauss_order
@@ -164,8 +168,10 @@ class experiment:
                 assert MV_ILC_bool or deproject_tSZ or deproject_CIB, 'Please indicate how to combine different channels'
                 assert not (MV_ILC_bool and (deproject_tSZ or deproject_CIB)), 'Only one ILC type at a time!'
                 self.get_ilc_weights()
-            # Compute total TT power (incl. noise, fgs, cmb) for use in inverse-variance filtering
-            self.get_total_TT_power() # CEV: this gives you self.cltt_tot
+            # if self.estimator=="lensing":
+                # Compute total TT power (incl. noise, fgs, cmb) for use in inverse-variance filtering
+            if clTT is None:
+                self.get_total_TT_power() # CEV: this gives you self.cltt_tot
 
             # Calculate inverse-variance filters
             self.inverse_variance_filters()
@@ -275,6 +281,7 @@ class experiment:
         Get total TT power from CMB, noise and fgs.
         Note that if both self.deproject_tSZ=1 and self.deproject_CIB=1, both are deprojected
         """
+        print("CAREFUL: Setting cltt_tot from get_total_TT_power.")
         #TODO: Why can't we get ells below 10 in cltt_tot?
         if len(self.freq_GHz)==1:
             self.cltt_tot = self.sky.cmb[0, 0].ftotalTT(self.cl_unl.ls)
@@ -455,7 +462,7 @@ class experiment:
 
     def get_qe_ksz_norm_check(self):
 
-        return ksz_norm_check(self.cltt_tot, self.ls, self.cl_gg, self.cl_taug,lmin = 1000.0, lmax=3000.0, n_ell=4096, eps=1e-30)
+        return ksz_norm_check(self.cltt_tot, self.ls, self.cl_gg, self.cl_taug,lmin = self.lmin, lmax=self.lmax, n_ell=4096, eps=1e-30)
 
     def get_nlpp(self, lmin=30, lmax=3000, bin_width=30):
         # TODO: adapt  the lmax of these bins to the lmax_out of hm_object
