@@ -440,13 +440,15 @@ class hm_framework:
 
         # Integral over M for 2halo bispectrum. This will later go into a QE
         for j, m in enumerate(hm_minimal.ms):
-            if m > exp_minimal.massCut: continue
+            # if m > exp_minimal.massCut: continue
 
             # Mean number of galaxies in a halo of mass m at redshift i to be applied to nfw profiles
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
     
             y = exp_minimal.tsz_filter * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                                       hm_minimal.pk_profiles['y'][i, j])(ells_in) # = y_{3D}(l/chi, M=j, z=i)
+            if m > exp_minimal.massCut:
+                y = 0
             itgnd_y_for_2hbispec[..., j] = y * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
 
             g = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
@@ -466,12 +468,13 @@ class hm_framework:
         # M integral.
         # CEV: ms is array of masses from mmin to mmax in nMasses steps, for integration, given by user at init.
         for j, m in enumerate(hm_minimal.ms):
-            if m > exp_minimal.massCut: continue # massCut given to experiment by user.
+            # if m > exp_minimal.massCut: continue # massCut given to experiment by user.
             # CEV: TODO: i don't find anywhere exp.tsz_filter being defined? I think exp_minimal.tsz_filter = None...
             # CEV: hm_minimal.pk_profiles['y'] comes directly from hmvec hcos.pk_profiles['y'].
             y = exp_minimal.tsz_filter * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                                       hm_minimal.pk_profiles['y'][i, j])(ells_in)
-            
+            if m > exp_minimal.massCut:
+                y = 0
             # Get the galaxy map --- analogous to kappa in the auto-biases. Note that we need a factor of
             # H dividing the galaxy window function to translate the hmvec convention to e.g. Ferraro & Hill 18 #TODO: why do you say that?
             Gal = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
@@ -497,6 +500,9 @@ class hm_framework:
                          * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                         hm_minimal.pk_profiles['y'][i, j]
                                         * (1 - np.exp(-(hm_minimal.ks / hm_minimal.p['kstar_damping']))))(ells_in)
+                if m > exp_minimal.massCut:
+                    y_damp = 0
+
                 Gal_damp = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                         hm_minimal.uk_profiles['nfw'][i, j]
                                         * (1 - np.exp(-(hm_minimal.ks / hm_minimal.p['kstar_damping']))))(ells_out)
@@ -520,14 +526,14 @@ class hm_framework:
 
             # Accumulate the itgnds
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
-            # 1h
-            itgnd_1h_cross[..., j] = mean_Ngal * np.conjugate(Galfft_damp) * phicfft_1_damp * mean_Ngal * hm_minimal.nzm[i, j]
+            # 1h CEV: added correction for 2g terms
+            itgnd_1h_cross[..., j] = mean_Ngal * np.conjugate(Galfft_damp) * phicfft_1_damp * (mean_Ngal-1) * hm_minimal.nzm[i, j]
             # 2h
             # 1
             itgnd_2h_1_1g[..., j] = mean_Ngal * np.conjugate(Galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] # Missing P(k) here. no, see below.
             itgnd_2h_1_2g[..., j] = mean_Ngal * phicfft_1 * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             # 2
-            itgnd_2h_y_Gg[..., j] = mean_Ngal * np.conjugate(Galfft) * mean_Ngal * phicfft_2_int \
+            itgnd_2h_y_Gg[..., j] = mean_Ngal * np.conjugate(Galfft) * (mean_Ngal-1) * phicfft_2_int \
                                     * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             # 3
             itgnd_2h_g_yG[..., j] = mean_Ngal * np.conjugate(Galfft) * phicfft_3_int \
@@ -664,7 +670,7 @@ class hm_framework:
         # Integral over M for 2halo trispectrum. This will later go into a QE
         # CEV: compute integrals that then go into QE
         for j, m in enumerate(hm_minimal.ms):
-            if m > exp_minimal.massCut: continue
+            # if m > exp_minimal.massCut: continue
 
             # CEV: prepare for mass integral over CIB profile.
             u = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
@@ -672,6 +678,9 @@ class hm_framework:
             # CEV: TODO: understand this u factors.
             u_cen = hm_minimal.CIB_central_filter[:, i, j]  # Centrals come with a factor of u^0
             u_sat = hm_minimal.CIB_satellite_filter[:, i, j] * u
+            if m > exp_minimal.massCut:
+                u_cen = 0
+                u_sat = 0
 
             itgnd_I_for_2hbispec[..., j] = hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] * (u_cen + u_sat)
 
@@ -695,12 +704,16 @@ class hm_framework:
 
         # M integral.
         for j, m in enumerate(hm_minimal.ms):
-            if m > exp_minimal.massCut: continue
+            # if m > exp_minimal.massCut: continue
             # project the I profiles
             u = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                              hm_minimal.uk_profiles['nfw'][i, j])(ells_in)
             u_cen = hm_minimal.CIB_central_filter[:, i, j]  # Centrals come with a factor of u^0
             u_sat = hm_minimal.CIB_satellite_filter[:, i, j] * u
+
+            if m > exp_minimal.massCut:
+                u_cen = 0
+                u_sat = 0
 
             # Get the galaxy map --- analogous to kappa in the auto-biases. Note that we need a factor of
             # H dividing the galaxy window function to translate the hmvec convention to e.g. Ferraro & Hill 18 # TODO:Why?
@@ -727,6 +740,8 @@ class hm_framework:
                                       hm_minimal.uk_profiles['nfw'][i, j]
                                       * (1 - np.exp(-(hm_minimal.ks / hm_minimal.p['kstar_damping']))))(ells_in)
                 u_sat_damp = hm_minimal.CIB_satellite_filter[:, i, j] * u_damp
+                if m > exp_minimal.massCut:
+                    u_sat_damp = 0
 
                 # CEV: me
                 Gal_damp = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
@@ -757,13 +772,13 @@ class hm_framework:
             # Accumulate the itgnds
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
             # 1h
-            itgnd_1h_cross[..., j] = mean_Ngal * np.conjugate(Galfft_damp) * phicfft_1_damp * mean_Ngal * hm_minimal.nzm[i, j]
+            itgnd_1h_cross[..., j] = mean_Ngal * np.conjugate(Galfft_damp) * phicfft_1_damp * (mean_Ngal-1) * hm_minimal.nzm[i, j]
             # 2h
             # 1
             itgnd_2h_1_1g[..., j] = mean_Ngal * np.conjugate(Galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             itgnd_2h_1_2g[..., j] = mean_Ngal * phicfft_1 * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             # 2
-            itgnd_2h_y_Gg[..., j] = mean_Ngal * np.conjugate(Galfft) * mean_Ngal * phicfft_2_int \
+            itgnd_2h_y_Gg[..., j] = mean_Ngal * np.conjugate(Galfft) * (mean_Ngal-1) * phicfft_2_int \
                                     * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             # 3
             itgnd_2h_g_yG[..., j] = mean_Ngal * np.conjugate(Galfft) * phicfft_3_int \
