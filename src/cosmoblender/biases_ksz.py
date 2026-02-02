@@ -535,8 +535,9 @@ class hm_framework:
 
             # Accumulate the itgnds
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
+            mean_Ngal_2 = hm_minimal.hods[survey_name]['Ns'][i, j] * (2*hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j])
             # 1h CEV: added correction for 2g terms
-            itgnd_1h_cross[..., j] = mean_Ngal * np.conjugate(Galfft_damp) * phicfft_1_damp * (mean_Ngal-1) * hm_minimal.nzm[i, j]
+            itgnd_1h_cross[..., j] = mean_Ngal_2 * np.conjugate(Galfft_damp) * phicfft_1_damp * hm_minimal.nzm[i, j]
             # 1h Shot noise term
             itgnd_1h_SN[..., j] = hm_minimal.hods[survey_name]['Nc'][i, j]/ (hm_minimal.hods[survey_name]['ngal'][i])**2 * phicfft_1_damp_SN * hm_minimal.nzm[i, j]
             itgnd_1h_SN = np.nan_to_num(itgnd_1h_SN)
@@ -546,7 +547,7 @@ class hm_framework:
             itgnd_2h_1_1g[..., j] = mean_Ngal * np.conjugate(Galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j] # Missing P(k) here. no, see below.
             itgnd_2h_1_2g[..., j] = mean_Ngal * phicfft_1 * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             # 2
-            itgnd_2h_y_Gg[..., j] = mean_Ngal * np.conjugate(Galfft) * (mean_Ngal-1) * phicfft_2_int \
+            itgnd_2h_y_Gg[..., j] = mean_Ngal_2 * np.conjugate(Galfft) * phicfft_2_int \
                                     * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             itgnd_2h_y_Gg_SN[..., j] = hm_minimal.hods[survey_name]['Nc'][i, j]/ (hm_minimal.hods[survey_name]['ngal'][i])**2 * phicfft_2_int_SN \
                                     * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
@@ -789,14 +790,15 @@ class hm_framework:
 
             # Accumulate the itgnds
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
+            mean_Ngal_2 = hm_minimal.hods[survey_name]['Ns'][i, j] * (2*hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j])
             # 1h
-            itgnd_1h_cross[..., j] = mean_Ngal * np.conjugate(Galfft_damp) * phicfft_1_damp * (mean_Ngal-1) * hm_minimal.nzm[i, j]
+            itgnd_1h_cross[..., j] = mean_Ngal_2 * np.conjugate(Galfft_damp) * phicfft_1_damp * hm_minimal.nzm[i, j]
             # 2h
             # 1
             itgnd_2h_1_1g[..., j] = mean_Ngal * np.conjugate(Galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             itgnd_2h_1_2g[..., j] = mean_Ngal * phicfft_1 * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             # 2
-            itgnd_2h_y_Gg[..., j] = mean_Ngal * np.conjugate(Galfft) * (mean_Ngal-1) * phicfft_2_int \
+            itgnd_2h_y_Gg[..., j] = mean_Ngal_2 * np.conjugate(Galfft) * phicfft_2_int \
                                     * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
             # 3
             itgnd_2h_g_yG[..., j] = mean_Ngal * np.conjugate(Galfft) * phicfft_3_int \
