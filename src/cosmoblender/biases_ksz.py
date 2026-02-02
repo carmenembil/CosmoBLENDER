@@ -622,7 +622,9 @@ class hm_framework:
 
         # The one and two halo bias terms -- these store the itgnd to be integrated over z
         oneH_cross = np.zeros([nx,self.nZs])+0j
+        oneH_SN = oneH_cross.copy()
         twoH_cross = oneH_cross.copy()
+        twoH_SN = oneH_cross.copy()
 
         # Run in parallel
         hm_minimal = Hm_minimal(self)
@@ -633,7 +635,7 @@ class hm_framework:
                                n * [damp_1h_prof], n * [exp_minimal], n * [hm_minimal], n * [survey_name])
 
         for idx, itgnds_at_i in enumerate(outputs):
-            oneH_cross[...,idx], twoH_cross[...,idx] = itgnds_at_i
+            oneH_cross[...,idx], twoH_cross[...,idx], oneH_SN[...,idx], twoH_SN[...,idx] = itgnds_at_i
 
         # itgnd factors from Limber projection (adapted to hmvec conventions)
         # CEV: need to convert CIB from T_CMB to dimensionless.
@@ -645,7 +647,9 @@ class hm_framework:
 
         # Integrate over z
         exp.biases['cib']['cross_w_gals']['1h'] = np.trapz( oneH_cross*gIg_itgnd, hcos.zs, axis=-1)
+        exp.biases['cib']['cross_w_gals']['1h_SN'] = np.trapz( oneH_SN*gIg_itgnd, hcos.zs, axis=-1)
         exp.biases['cib']['cross_w_gals']['2h'] = np.trapz( twoH_cross*gIg_itgnd, hcos.zs, axis=-1)
+        exp.biases['cib']['cross_w_gals']['2h_SN'] = np.trapz( twoH_SN*gIg_itgnd, hcos.zs, axis=-1)
 
         exp.biases['ells'] = ells_out
         return
@@ -665,11 +669,13 @@ class hm_framework:
 
         # Temporary storage. CEV: nMasses is the # of steps for the mass integral, given by user at init.
         itgnd_1h_cross = np.zeros([nx, hm_minimal.nMasses]) + 0j 
+        itgnd_1h_SN = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         # For term one where QE acts simply on profiles
         itgnd_2h_1_2g = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         itgnd_2h_1_1g = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         # For terms where first mass int has to be done before QE
         itgnd_2h_y_Gg = itgnd_1h_cross.copy(); # to store the already integrated over M profile after gone through QE * all prefactors and such
+        itgnd_2h_y_Gg_SN = itgnd_1h_cross.copy()
         # itgnd_2h_y_Gg = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         itgnd_2h_g_yG = itgnd_1h_cross.copy();
         # The integrands for the first M int
@@ -750,7 +756,9 @@ class hm_framework:
 
             # CEV: TODO: for now I'll ignore damping.
             phicfft_1 = QE(u_cen + u_sat, gfft)
+            phicfft_1_SN = QE(u_cen + u_sat, np.ones_like(gfft))
             phicfft_2_int = QE(int_over_M_of_I, gfft)
+            phicfft_2_int_SN = QE(int_over_M_of_I, np.ones_like(gfft))
             phicfft_3_int = QE(u_cen + u_sat, int_over_M_of_g)
 
             if damp_1h_prof:
@@ -779,7 +787,10 @@ class hm_framework:
                 # CEV: ASK: Anton why he doesn't damp u_cen.
                 phicfft_ucen_g_damp = QE(u_cen, gfft_damp)
                 phicfft_usat_g_damp = QE(u_sat_damp, gfft_damp)
+                phicfft_ucen_g_damp_SN = QE(u_cen, np.ones_like(gfft_damp))
+                phicfft_usat_g_damp_SN = QE(u_sat_damp, np.ones_like(gfft_damp))
                 phicfft_1_damp = (phicfft_ucen_g_damp + phicfft_usat_g_damp)
+                phicfft_1_damp_SN = (phicfft_ucen_g_damp_SN + phicfft_usat_g_damp_SN)
             else:
                 # galfft_damp = galfft;
                 # phicfft_ucen_usat_damp = phicfft_ucen_usat;
@@ -787,12 +798,16 @@ class hm_framework:
 
                 Galfft_damp = Galfft
                 phicfft_1_damp = phicfft_1
+                phicfft_1_damp_SN = phicfft_1_SN
 
             # Accumulate the itgnds
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
             mean_Ngal_2 = hm_minimal.hods[survey_name]['Ns'][i, j] * (2*hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j])
             # 1h
             itgnd_1h_cross[..., j] = mean_Ngal_2 * np.conjugate(Galfft_damp) * phicfft_1_damp * hm_minimal.nzm[i, j]
+            # 1h Shot noise term
+            itgnd_1h_SN[..., j] = hm_minimal.hods[survey_name]['Nc'][i, j]/(hm_minimal.hods[survey_name]['ngal'][i])**2 * phicfft_1_damp_SN * hm_minimal.nzm[i, j]
+            itgnd_1h_SN = np.nan_to_num(itgnd_1h_SN)
             # 2h
             # 1
             itgnd_2h_1_1g[..., j] = mean_Ngal * np.conjugate(Galfft) * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
@@ -800,6 +815,9 @@ class hm_framework:
             # 2
             itgnd_2h_y_Gg[..., j] = mean_Ngal_2 * np.conjugate(Galfft) * phicfft_2_int \
                                     * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            
+            itgnd_2h_y_Gg_SN[..., j] = hm_minimal.hods[survey_name]['Nc'][i, j]/(hm_minimal.hods[survey_name]['ngal'][i])**2 * phicfft_2_int_SN * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
+            itgnd_2h_y_Gg_SN = np.nan_to_num(itgnd_2h_y_Gg_SN)
             # 3
             itgnd_2h_g_yG[..., j] = mean_Ngal * np.conjugate(Galfft) * phicfft_3_int \
                                     * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
@@ -807,10 +825,13 @@ class hm_framework:
         # Perform the m integrals
         # 1h
         oneH_cross_at_i = np.trapz(itgnd_1h_cross, hm_minimal.ms, axis=-1)
+        oneH_SN_at_i = np.trapz(itgnd_1h_SN, hm_minimal.ms, axis=-1)
         # 2h CEV: strange way of doing it but ok.
         thoH_cross_1_1 = np.trapz(itgnd_2h_1_1g, hm_minimal.ms, axis=-1)
         # CEV: TODO: understand how this consistency is applied in general. Make sure it's applied consistently.
         twoH_cross_at_i = np.trapz(itgnd_2h_1_2g, hm_minimal.ms, axis=-1) * (thoH_cross_1_1 + hm_minimal.g_consistency[i]) * pk_of_L \
                           + np.trapz(itgnd_2h_y_Gg, hm_minimal.ms, axis=-1) + np.trapz(itgnd_2h_g_yG, hm_minimal.ms, axis=-1)
-        return oneH_cross_at_i, twoH_cross_at_i
+        twoH_SN_at_i = np.trapz(itgnd_2h_y_Gg_SN, hm_minimal.ms, axis=-1)
+        
+        return oneH_cross_at_i, twoH_cross_at_i, oneH_SN_at_i, twoH_SN_at_i
     
