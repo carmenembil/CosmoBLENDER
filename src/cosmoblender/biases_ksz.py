@@ -35,7 +35,7 @@ class hm_framework:
     """ Set the halo model parameters """
     def __init__(self, lmax_out=500, m_min=1e10, m_max=5e15, nMasses=30, z_min=0.07, z_max=3, nZs=30, k_min = 1e-4,
                  k_max=10, nks=1001, mass_function='sheth-torman', mdef='vir', cib_model='planck13', cosmoParams=None
-                 , xmax=5, nxs=40000, tsz_param_override={}):
+                 , xmax=5, nxs=40000, tsz_param_override={},y_press_profile='amodeo'):
         """ Inputs:
                 * lmax_out = int. Maximum multipole (L) at which to return the lensing reconstruction
                 * m_min = Minimum virial mass for the halo model calculation
@@ -75,9 +75,16 @@ class hm_framework:
         self.tsz_param_override = tsz_param_override
 
         self.hcos = hm.HaloModel(zs,ks,ms=ms,mass_function=mass_function,params=cosmoParams,mdef=mdef)
-        self.hcos.add_battaglia_pres_profile("y",family="pres",xmax=xmax,nxs=nxs, param_override=self.tsz_param_override)
-        self.hcos.set_cibParams(cib_model)
 
+        # CEV: choose y profile 
+        if y_press_profile == 'battaglia':
+            self.hcos.add_battaglia_pres_profile("y",family="pres",xmax=xmax,nxs=nxs, param_override=self.tsz_param_override)
+        elif y_press_profile == 'amodeo':
+            self.hcos.add_amodeo20_gnfw_pres_profile("y",xmax=xmax,nxs=nxs)
+        else:
+            raise ValueError("y_press_profile must be either 'battaglia' or 'amodeo'. You entered " + y_press_profile)
+        
+        self.hcos.set_cibParams(cib_model)
         self.ms_rescaled = self.hcos.ms[...]/self.hcos.rho_matter_z(0)
 
         self.m_consistency = np.zeros(len(self.hcos.zs))
@@ -754,7 +761,6 @@ class hm_framework:
             gfft = g / hm_minimal.hods[survey_name]['ngal'][i]
             gfft = np.nan_to_num(gfft)
 
-            # CEV: TODO: for now I'll ignore damping.
             phicfft_1 = QE(u_cen + u_sat, gfft)
             phicfft_1_SN = QE(u_cen + u_sat, np.ones_like(gfft))
             phicfft_2_int = QE(int_over_M_of_I, gfft)
