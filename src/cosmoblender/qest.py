@@ -21,7 +21,7 @@ try:
 except ImportError:
     ccl_available = False
 
-class Exp_minimal: # CEV: this might actually never be used?
+class Exp_minimal: 
     """ A helper class to encapsulate some essential attributes of experiment() objects to be passed to parallelized
         workers, saving as much memory as possible
         - Inputs:
@@ -84,7 +84,7 @@ class experiment:
         self.cl_unl = ql.spec.get_camb_scalcl(fname_scalar, lmax=lmax)
         self.cl_len = ql.spec.get_camb_lensedcl(fname_lensed, lmax=lmax)
         self.nlee = nlee
-        self.ls = self.cl_len.ls # CEV: these ls that come from cl_len will be used across for cltt_tot but therefor also for ksz filters.
+        self.ls = self.cl_len.ls 
         self.lmax = lmax
         self.lmin = 500
         self.freq_GHz = freq_GHz
@@ -108,7 +108,7 @@ class experiment:
                 raise ValueError(f"ls_gal_cls must go up to at least lmax of reconstruction ({self.lmax}), but got ls_gal_cls[-1]={ls_gal_cls[-1]}")
 
             # Directly interpolate cl_gg and cl_taug to self.ls
-            self.cl_gg = np.interp(self.ls, ls_gal_cls, cl_gg, left=0., right=0.)       # CEV: I think there are enough flags for these left and right to never be used. If they are it will probably break the filters (~1/cl_gg).
+            self.cl_gg = np.interp(self.ls, ls_gal_cls, cl_gg, left=0., right=0.)    
             self.cl_taug = np.interp(self.ls, ls_gal_cls, cl_taug, left=0., right=0.)
             if clTT is not None:
                 self.cltt_tot = np.interp(self.ls, ls_gal_cls, clTT, left=0., right=0.)
@@ -171,16 +171,14 @@ class experiment:
             # if self.estimator=="lensing":
                 # Compute total TT power (incl. noise, fgs, cmb) for use in inverse-variance filtering
             if clTT is None:
-                self.get_total_TT_power() # CEV: this gives you self.cltt_tot
+                self.get_total_TT_power()
 
             # Calculate inverse-variance filters
             self.inverse_variance_filters()
             # Calculate QE norm
             if self.estimator == "lensing":
                 self.get_qe_norm()
-            # CEV: in the kSZ case, this calculation depends on weights_mat_total, which is initialized in biases.py.
             # Therefore, one needs to initialize the normalization also in biases.py right after get_weights_mat_total is called.
-            # CEV: TODO: potentially when code is working, one could make it so that weights_mat_total and qe_norm is only computed once. But not a priority.
 
 
 
@@ -201,13 +199,13 @@ class experiment:
         nodes = (b - a) / 2. * nodes_on_minus1to1 + (a + b) / 2.
         return nodes, (b - a) / 2. * weights
 
-    def W_phi(self, lmax_clkk): # CEV: only used for delensing
+    def W_phi(self, lmax_clkk):
         # TODO: might want to specify cosmo here and elsewhere for ql
         clpp = ql.spec.get_camb_scalcl(None, lmax=lmax_clkk).clpp
         nlpp = self.get_nlpp(lmin=30, lmax=lmax_clkk, bin_width=30)
         return clpp / (clpp + nlpp)
 
-    def W_E(self, lmax_clee): # CEV: only used for delensing
+    def W_E(self, lmax_clee):
         ells = np.arange(lmax_clee+1)
         if self.nlee is not None:
             self.clee_tot = self.sky.cmb[0, 0].flensedEE(ells) + self.nlee
@@ -237,7 +235,7 @@ class experiment:
 
     def get_ilc_weights(self):
         """
-        Get the harmonic ILC weights. CEV: used to construct tsz filter (qest.py) and CIB filter (biases.py)
+        Get the harmonic ILC weights. 
         """
         lmin_cutoff = 14
         num_of_ells = 50 # Sum of weights is still 1 to 1 part in 10^14 even with ells spaced 100 apart
@@ -303,7 +301,7 @@ class experiment:
         # Avoid infinities when dividing by inverse variance
         self.cltt_tot[np.where(np.isnan(self.cltt_tot))] = np.inf
 
-    def get_total_EE_power(self, lmax): # CEV: only used for delensing
+    def get_total_EE_power(self, lmax): 
         """
         Get total EE power from CMB, noise and fgs.
         At present, this assumes the E-modes are obtained from exactly the same channels as the temperature
@@ -341,15 +339,12 @@ class experiment:
     def __setstate__(self, state):
         self.__dict__.update(state)
 
-    def get_weights_mat_total(self, ells_out): # CEV: takes W(L) and just computes the full weights matrix. keeps in self. Nothing to edit
-        # CEV: This function is never called in qest.py. It is called everytime you call to compute a bias. Given that this only depends on ell stuff I wonder why not call once here when you initialize qest and then use whenever. Because of being able to call different ells_out every time presumably. Not really because it's defined at initialization of biases anyway.
+    def get_weights_mat_total(self, ells_out): 
         ''' Get the matrices needed for Gaussian quadrature of QE integral '''
         self.weights_mat_total = device_put(jnp.array([self.weights_mat_at_L(L) for L in ells_out]))
         self.get_qe_ksz_norm(self.nodes, self.cl_gg, self.cl_taug, self.cltt_tot, self.ls) if self.estimator == "ksz_vel" else None
 
     def weights_mat_at_L(self, L): 
-        # CEV: This computes the weights for equation C.12 as a function of L. In particular: w_i * w_j * W(L,l_i,l_j) given you already have w and W
-        # CEV: w are just weights from the Gaussian quadrature that will be the same for kSZ
         '''
         Calculate the matrix to be used in the QE integration, i.e.,
         H(L). This is derived from
@@ -366,7 +361,7 @@ class experiment:
         '''
         return (self.weights * self.weights[:, np.newaxis] * self.ell_dependence(L, self.lnodes_grid, self.lpnodes_grid)).astype(np.float32)
 
-    def ell_dependence(self, L, l, lp): # CEV: Here is where you actually code the weights
+    def ell_dependence(self, L, l, lp): 
         '''
         Sample the kernel of the chosen reconstruction (self.estimator).
         For lensing:
@@ -378,9 +373,8 @@ class experiment:
             - W(L, l, lp)
         '''
 
-        # CEV: triangle condition is the same in both cases, keep as is.
         L = np.asarray(L, dtype=int)  # Ensure L is an integer
-        condition = (L + l >= lp) & (L + lp >= l) & (l + lp >= L) # CEV: First two encapsulate the two options of the |l-lp|<=L , third is same.
+        condition = (L + l >= lp) & (L + lp >= l) & (l + lp >= L) 
         singular_condition = (L + l == lp) | (L + lp == l) | (l + lp == L) #CEV: exclude cases where Delta=0 to avoid infinities.
         # singular_condition = (L + l + lp) * (-L + l + lp) * (L - l + lp) * (L + l - lp) 
 
@@ -404,7 +398,6 @@ class experiment:
                                             (L-l[valid_indices]+lp[valid_indices]) * 
                                             (L+l[valid_indices]-lp[valid_indices]))**(0.5)
             
-            # CEV: for checks
             square = np.zeros_like(l, dtype=float)
             square[valid_indices] = (L+l[valid_indices]+lp[valid_indices]) * (-L+l[valid_indices]+lp[valid_indices]) * (L-l[valid_indices]+lp[valid_indices]) * (L+l[valid_indices]-lp[valid_indices])
 
@@ -449,14 +442,10 @@ class experiment:
         Returns:
             * qe_norm = 1D numpy array. Normalisation at ells_out multipoles.
         """
-        # CEV: make sure you are not missing any 2pi factors anywhere. 
-        # CEV: Checked that the qe is normalised and pi factors should only be modified inside QE_via_quad so they are applied consistently.
         # Get the filters F_1 and F_2 from new function
         al_F_1, al_F_2 = get_filters_kSZ_norm(cltt_tot=cltt_tot, ls=ls, cl_gg=cl_gg, cl_taug=cl_taug)
-        F_1_array = jnp.array(al_F_1(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
+        F_1_array = jnp.array(al_F_1(nodes).astype(np.float32)) 
         F_2_array = jnp.array(al_F_2(nodes).astype(np.float32))
-        # print("F_1_array ",F_1_array) THESE WORK
-        # print("F_2_array ",F_2_array)
         norm = self.QE_via_quad(F_1_array, F_2_array)
         self.qe_ksz_norm = norm
 
@@ -541,7 +530,7 @@ class experiment:
                 assert (weights_mat_total is not None and nodes is not None)
                 F_1_array = jnp.array(al_F_1(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
                 F_2_array = jnp.array(al_F_2(nodes).astype(np.float32))
-                unnorm_TT_qe = self.QE_via_quad(F_1_array, F_2_array) # CEV: already given at ells_out through weights_mat_total.
+                unnorm_TT_qe = self.QE_via_quad(F_1_array, F_2_array) 
             else:
                 assert (ccl_available), 'pyccl not available. Please install pyccl to use FFTlog'
                 unnorm_TT_qe = unnorm_TT_qe_fftlog(al_F_1, al_F_2, N_l, lmin, alpha, lmax)(ell_out)
@@ -593,13 +582,10 @@ class experiment:
     
         # Calculate unnormalised QE
         assert (weights_mat_total is not None and nodes is not None)
-        F_T_array = jnp.array(al_F_T(nodes).astype(np.float32)) # CEV: Evaluate Fs at nodes and convert to jax arrays.
+        F_T_array = jnp.array(al_F_T(nodes).astype(np.float32)) 
         F_g_array = jnp.array(al_F_g(nodes).astype(np.float32))
-        unnorm_ksz_qe = self.QE_via_quad(F_T_array, F_g_array) # CEV: already gives result at ells_out through weights_mat_total
+        unnorm_ksz_qe = self.QE_via_quad(F_T_array, F_g_array) 
 
-        # CEV: in principle, no need for convention correction if normalization has been computed consistently.
-        # CEV: not calling this here anymore, as get_weights_mat_total calls it when initializing biases.
-        # self.get_qe_ksz_norm(nodes, cl_gg, cl_taug, cltt_tot, ls)
         qe_ksz_norm_jx = jnp.array(self.qe_ksz_norm.astype(np.float32))
         return -np.nan_to_num(unnorm_ksz_qe / qe_ksz_norm_jx) # CEV: minus sign to match Fiona's convention
 
@@ -631,7 +617,6 @@ class experiment:
         Returns:
             - The unnormalized lensing reconstruction at L
         '''
-        # CEV: TODO: ojo with this 2pi. Not sure it's consistent with my kSZ normalization. Check.
         return jnp.dot(self.inner_mult(F_2_array), F_1_array)
 
     @partial(jit, static_argnums=(0,))
@@ -752,25 +737,24 @@ def get_filtered_profiles_fftlog(profile_leg1, cltt_tot, ls, cltt_len, profile_l
 
     if profile_leg2 is None:
         profile_leg2 = profile_leg1
-    F_1_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg1 / cltt_tot)) # CEV: Here is where filters are constructed
-    F_2_of_l = smooth_low_monopoles(np.nan_to_num(cltt_len * profile_leg2/ cltt_tot)) # CEV: find out how profile_legs are defined
+    F_1_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg1 / cltt_tot)) 
+    F_2_of_l = smooth_low_monopoles(np.nan_to_num(cltt_len * profile_leg2/ cltt_tot)) 
     al_F_1 = interp1d(ls, F_1_of_l, bounds_error=False,  fill_value='extrapolate')
     al_F_2 = interp1d(ls, F_2_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_1, al_F_2
 
 def get_filtered_profiles_kSZ(profile_leg_T, cltt_tot, ls, cl_gg, cl_taug, profile_leg_g):
     """
-    Filter the profiles in the way of, e.g., eq. 13 of Kvasiuk & Munchmeyer (24). Or CEV.
+    Filter the profiles in the way of, e.g., eq. 13 of Kvasiuk & Munchmeyer (24). Or Embil villagra (25).
     Inputs:
-        * profile_leg_T = 1D numpy array. Projected, spherically-symmetric emission profile. Truncated at lmax. T(ell) # CEV: this can be the same as antons
-        * profile_leg_g = 1D numpy array. Projected galaxy field g^alpha(ell). # CEV: this will be coming from the HOD that I will be defined by user 
+        * profile_leg_T = 1D numpy array. Projected, spherically-symmetric emission profile. Truncated at lmax. T(ell) 
+        * profile_leg_g = 1D numpy array. Projected galaxy field g^alpha(ell). be defined by user 
         * cltt_tot = 1d numpy array. Total power in observed TT fields.
         * ls = 1d numpy array. Multipoles at which cltt_tot is defined
         * cl_gg = 1d numpy array. Galaxy auto spectrum at ls including shot noise.
         * cl_taug = 1d numpy array. Galaxy-electron power spectrum at ls.
     Returns:
         * Interpolatable objects from which to get F_T and F_g at every multipole.
-        CEV: al_F_T and al_F_g are now functions of l.
     """
     
     def smooth_low_monopoles(array): 
@@ -778,18 +762,16 @@ def get_filtered_profiles_kSZ(profile_leg_T, cltt_tot, ls, cl_gg, cl_taug, profi
         new = array[2:]
         return np.interp(np.arange(len(array)), np.arange(len(array))[2:], new)
     
-    # CEV: if ls[-1]<self.lmax-1 not necessary, it is so by construction.
 
     F_T_of_l = smooth_low_monopoles(np.nan_to_num(profile_leg_T / cltt_tot)) 
-    F_g_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug * profile_leg_g/ cl_gg)) # CEV: find out how to define delta field
-    al_F_T = interp1d(ls, F_T_of_l, bounds_error=False,  fill_value='extrapolate') # CEV: function to get the value of F at any l
+    F_g_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug * profile_leg_g/ cl_gg)) 
+    al_F_T = interp1d(ls, F_T_of_l, bounds_error=False,  fill_value='extrapolate')
     al_F_g = interp1d(ls, F_g_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_T, al_F_g
 
 def get_filters_kSZ_norm(cltt_tot, ls, cl_gg, cl_taug):
     """
     Same function as above but without profiles, for the kSZ normalization.
-    CEV: TODO: see if this can be merged with the above function.
     """
     
     def smooth_low_monopoles(array): 
@@ -802,7 +784,7 @@ def get_filters_kSZ_norm(cltt_tot, ls, cl_gg, cl_taug):
 
     F_1_of_l = smooth_low_monopoles(np.nan_to_num(1.0 / cltt_tot)) 
     F_2_of_l = smooth_low_monopoles(np.nan_to_num(cl_taug * cl_taug / cl_gg)) 
-    al_F_1 = interp1d(ls, F_1_of_l, bounds_error=False,  fill_value='extrapolate') # CEV: function to get the value of F at any l
+    al_F_1 = interp1d(ls, F_1_of_l, bounds_error=False,  fill_value='extrapolate') 
     al_F_2 = interp1d(ls, F_2_of_l, bounds_error=False,  fill_value='extrapolate')
     return al_F_1, al_F_2
 
@@ -833,6 +815,5 @@ def ksz_norm_check(cltt_tot, ls, cl_gg, cl_taug,lmin = 1000.0, lmax=3000.0, n_el
 
     denom = np.maximum(cltt_int * clgg_int, eps)
     integrand = ell_grid * (cltaug_int**2) / denom
-    # CEV: 2pi coming from d^2 l = 2pi l dl
     val = 2*np.pi*np.trapz(integrand, ell_grid)
     return val

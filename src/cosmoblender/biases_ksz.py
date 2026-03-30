@@ -209,7 +209,6 @@ class hm_framework:
         else:
             # Single-frequency scenario. Return two (nZs, nMs) array containing f_cen(M,z) and f_sat(M,z)
             # Compute \Sum_{\nu} f^{\nu}(z,M) w^{\nu, ILC}_l
-            # CEV: since: tls.from_Jypersr_to_uK returns filter in T_CMB[muK]
             self.CIB_central_filter = tls.from_Jypersr_to_uK(exp.freq_GHz)\
                                       * self.hcos._get_fcen(exp.freq_GHz*1e9)[:,:,0][np.newaxis,:,:]
             self.CIB_satellite_filter = tls.from_Jypersr_to_uK(exp.freq_GHz) \
@@ -265,7 +264,6 @@ class hm_framework:
 
                 galfft = np.nan_to_num(galfft)
 
-                # CEV: TODO: this actually has a big impact at low L. Check how accurate it is, it looks good but i need to have it more clear.
                 if damp_1h_prof:
                     gal_damp = tls.pkToPell(hcos.comoving_radial_distance(hcos.zs[i]),
                                        hcos.ks, hcos.uk_profiles['nfw'][i, j]
@@ -309,8 +307,6 @@ class hm_framework:
 
 ### BIASES CALCULATIONS
 
-# CEV: TODO: potentially this can be generalized to g s g where you pick which s you want.
-
 # tSZ
     def get_tsz_cross_biases(self, exp, gzs, gdndz, gzs2=None, gdndz2=None, bin_width_out=30, survey_name='LSST',
                              damp_1h_prof=True, gal_consistency=False, tsz_consistency=False):
@@ -331,18 +327,9 @@ class hm_framework:
             * (optional) tsz_consistency = Bool. Whether to impose consistency condition on tSZ to correct for missing
                               low mass halos in integrals a la Schmidt 15.
         """
-        # CEV: hcos created at init: 
-        # self.hcos = hm.HaloModel(zs,ks,ms=ms,mass_function=mass_function,params=cosmoParams,mdef=mdef)
-        # self.hcos.add_battaglia_pres_profile("y",family="pres",xmax=xmax,nxs=nxs, param_override=self.tsz_param_override)
-        # self.hcos.set_cibParams(cib_model)
-        # CEV: you add HODs to correlate with before running cross biases:
-        # hm_calc = biases.hm_framework(cosmoParams=cosmoParams, m_min=Mmin, nZs=nZs, nMasses=nMasses, cib_model=cib_model, z_max=z_max)
-        # hm_calc.hcos.add_hod(name=survey_name, mthresh=10**11.5+hm_calc.hcos.zs*0.) 
-        # hm_calc.get_tsz_cross_biases(experiment, z_mean_gal, surface_ngal_of_z_gal, survey_name=survey_name)
+
         hcos = self.hcos
-        # CEV: Low mass corrections from Schmidt-style. Deals with problems from not integrating to low enough mass. 
-        # In principle it should be 0 to inf.
-        # CEV: TODO: test importance of these once code is working.
+        # CEV: Low mass corrections from Schmidt-style. Deals with problems from not integrating to low enough mass.
         if tsz_consistency:
             self.get_tsz_consistency(exp, lmax_proj=exp.lmax)
         if gal_consistency:
@@ -369,8 +356,6 @@ class hm_framework:
         nx = len(ells_out)
 
         # Get frequency scaling of tSZ, possibly including harmonic ILC cleaning
-        # CEV: you can think of this as a multiplicative transfer function
-        # CEV: TODO: undestand
         exp.tsz_filter = exp.get_tsz_filter()
 
         # The one and two halo bias terms -- these store the itgnd to be integrated over z.
@@ -384,19 +369,15 @@ class hm_framework:
         hm_minimal = Hm_minimal(self)
         exp_minimal = exp
 
-        n = len(hcos.zs) # CEV: so zs = np.linspace(z_min,z_max,nZs), but then we are gonna integrate over np.arange(len(zs))? Yes becuase n is used as the index of the redshift, not the redshift itself.
+        n = len(hcos.zs) 
 
-        # CEV: map the function to each redshift slice. Each of the variables from 2 to end are the inputs to tsZ_cross_itgrnds_each_z.
-        # CEV: 'map' applies the function to each element of the first argument (here np.arange(n)) and the other arguments are just repeated n times.
         outputs = map(self.tsZ_cross_itgrnds_each_z, np.arange(n), n * [ells_out],
                                n * [damp_1h_prof], n * [exp_minimal], n * [hm_minimal], n * [survey_name])
-
-        # CEV: three dots mean "as many colons as needed to make the shape work out" in this case, tsz_cross_itgrnds_each_z returns two numbers? for 1h and 2h terms, so those in the end oneH_cross and twoH_cross are just 1d arrays of len(ells_out)?
+        
         for idx, itgnds_at_i in enumerate(outputs):
             oneH_cross[...,idx], twoH_cross[...,idx], oneH_SN[...,idx], twoH_SN[...,idx] = itgnds_at_i
 
         # Integrate over z
-        # CEV: TODO: eventually allow G and g to be different. For now this will be first approximation.
         gyg_intgrnd = tls.limber_itgrnd_kernel(hcos, 3) \
                         * tls.gal_window(hcos, hcos.zs, gzs, gdndz) \
                         * tls.y_window(hcos) \
@@ -422,9 +403,9 @@ class hm_framework:
         """
         
         nx = len(ells_out)
-        ells_in = np.arange(0, exp_minimal.lmax + 1) # CEV: always used in pkToPell calls. I think it's small ell?
+        ells_in = np.arange(0, exp_minimal.lmax + 1) 
 
-        # Temporary storage. CEV: nMasses is the # of steps for the mass integral, given by user at init.
+        # Temporary storage.
         itgnd_1h_cross = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         itgnd_1h_SN = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         # For term one where QE acts simply on profiles
@@ -433,7 +414,6 @@ class hm_framework:
         # For terms where first mass int has to be done before QE
         itgnd_2h_y_Gg = itgnd_1h_cross.copy(); # to store the already integrated over M profile after gone through QE * all prefactors and such
         itgnd_2h_y_Gg_SN = itgnd_1h_cross.copy();
-        # itgnd_2h_y_Gg = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         itgnd_2h_g_yG = itgnd_1h_cross.copy();
         # The integrands for the first M int
         itgnd_y_for_2hbispec = np.zeros([exp_minimal.lmax + 1, hm_minimal.nMasses]) 
@@ -446,19 +426,17 @@ class hm_framework:
                                                            exp_minimal.weights_mat_total, exp_minimal.nodes)
         
         # Project the matter power spectrum for two-halo terms
-        # CEV: hm_minimal.Pzk is actually hm_full.hcos.Pzk, so Pzk is already defined at hcos.zs
         pk_of_l = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks, hm_minimal.Pzk[i])(ells_in)
         pk_of_L = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks, hm_minimal.Pzk[i])(ells_out)
 
         # Integral over M for 2halo bispectrum. This will later go into a QE
         for j, m in enumerate(hm_minimal.ms):
-            # if m > exp_minimal.massCut: continue
 
             # Mean number of galaxies in a halo of mass m at redshift i to be applied to nfw profiles
             mean_Ngal = hm_minimal.hods[survey_name]['Nc'][i, j] + hm_minimal.hods[survey_name]['Ns'][i, j]
     
             y = exp_minimal.tsz_filter * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
-                                                      hm_minimal.pk_profiles['y'][i, j])(ells_in) # = y_{3D}(l/chi, M=j, z=i)
+                                                      hm_minimal.pk_profiles['y'][i, j])(ells_in) 
             if m > exp_minimal.massCut:
                 y = 0
             itgnd_y_for_2hbispec[..., j] = y * hm_minimal.nzm[i, j] * hm_minimal.bh[i, j]
@@ -475,34 +453,29 @@ class hm_framework:
                     np.trapz(itgnd_y_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.y_consistency[i])
         
         int_over_M_of_g = pk_of_l * (
-                    np.trapz(itgnd_g_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.g_consistency[i]) # CEV: g_consistency = 0 if gal_consistency = False.
+                    np.trapz(itgnd_g_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.g_consistency[i]) 
 
         # M integral.
-        # CEV: ms is array of masses from mmin to mmax in nMasses steps, for integration, given by user at init.
         for j, m in enumerate(hm_minimal.ms):
-            # if m > exp_minimal.massCut: continue # massCut given to experiment by user.
-            # CEV: TODO: i don't find anywhere exp.tsz_filter being defined? I think exp_minimal.tsz_filter = None...
-            # CEV: hm_minimal.pk_profiles['y'] comes directly from hmvec hcos.pk_profiles['y'].
+            
             y = exp_minimal.tsz_filter * tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                                       hm_minimal.pk_profiles['y'][i, j])(ells_in)
             if m > exp_minimal.massCut:
                 y = 0
-            # Get the galaxy map --- analogous to kappa in the auto-biases. Note that we need a factor of
-            # H dividing the galaxy window function to translate the hmvec convention to e.g. Ferraro & Hill 18 #TODO: why do you say that?
+                
             Gal = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
                                hm_minimal.ks, hm_minimal.uk_profiles['nfw'][i, j])(ells_out)
             
             g = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
                                hm_minimal.ks, hm_minimal.uk_profiles['nfw'][i, j])(ells_in)
             
-            # TODO: should ngal in denominator depend on z? ms_rescaled doesn't
-            # CEV: TODO: understand why it needs to be conjugated.
+
             Galfft = Gal / hm_minimal.hods[survey_name]['ngal'][i]
             Galfft = np.nan_to_num(Galfft)
             gfft = g / hm_minimal.hods[survey_name]['ngal'][i]
             gfft = np.nan_to_num(gfft)
 
-            phicfft_1 = QE(y, gfft) # CEV: TODO: does ngal depend on k? why is it going into QE?
+            phicfft_1 = QE(y, gfft) 
             phicfft_1_SN = QE(y, np.ones_like(gfft))
             phicfft_2_int = QE(int_over_M_of_y, gfft) 
             phicfft_2_int_SN = QE(int_over_M_of_y, np.ones_like(gfft))
@@ -529,7 +502,7 @@ class hm_framework:
                 gfft_damp = g_damp / hm_minimal.hods[survey_name]['ngal'][i] 
                 gfft_damp = np.nan_to_num(gfft_damp)
 
-                phicfft_1_damp = QE(y_damp, gfft_damp) # CEV: only this one is needed for correcting 1h.
+                phicfft_1_damp = QE(y_damp, gfft_damp) 
                 phicfft_1_damp_SN = QE(y_damp, np.ones_like(gfft_damp))
             else:
                 y_damp = y; 
@@ -567,9 +540,9 @@ class hm_framework:
         # 1h
         oneH_cross_at_i = np.trapz(itgnd_1h_cross, hm_minimal.ms, axis=-1)
         oneH_SN_at_i = np.trapz(itgnd_1h_SN, hm_minimal.ms, axis=-1)
-        # 2h CEV: strange way of doing it but ok.
+        # 2h 
         thoH_cross_1_1 = np.trapz(itgnd_2h_1_1g, hm_minimal.ms, axis=-1)
-        # CEV: TODO: understand how this consistency is applied in general. Make sure it's applied consistently.
+        
         twoH_cross_at_i = np.trapz(itgnd_2h_1_2g, hm_minimal.ms, axis=-1) * (thoH_cross_1_1 + hm_minimal.g_consistency[i]) * pk_of_L \
                           + np.trapz(itgnd_2h_y_Gg, hm_minimal.ms, axis=-1) + np.trapz(itgnd_2h_g_yG, hm_minimal.ms, axis=-1)
         twoH_SN_at_i = np.trapz(itgnd_2h_y_Gg_SN, hm_minimal.ms, axis=-1)
@@ -595,7 +568,7 @@ class hm_framework:
         """
         hcos = self.hcos
 
-        # CEV: Low mass corrections. CEV: TODO: test importance of these once code is working.
+
         if gal_consistency:
             self.get_galaxy_consistency(exp, survey_name)
         if cib_consistency:
@@ -615,7 +588,6 @@ class hm_framework:
             print("Using provided gzs2 and gdndz2.")
 
         # Compute effective CIB weights, including f_cen and f_sat factors as well as possibly fg cleaning
-        # CEV: Gets self.CIB_central_filter and self.CIB_satellite_filter , to be applied to the nfw profiles.
         # It can also take into account multifreq foreground cleaning.
         self.get_CIB_filters(exp) # [T_CMB muK]
 
@@ -645,8 +617,6 @@ class hm_framework:
             oneH_cross[...,idx], twoH_cross[...,idx], oneH_SN[...,idx], twoH_SN[...,idx] = itgnds_at_i
 
         # itgnd factors from Limber projection (adapted to hmvec conventions)
-        # CEV: need to convert CIB from T_CMB to dimensionless.
-        # CEV: TODO: check that you've done this correctly, both central and sat have T_CMB units.
         gIg_itgnd = tls.limber_itgrnd_kernel(hcos, 3) \
                     * tls.gal_window(hcos, hcos.zs, gzs, gdndz) \
                     * tls.CIB_window(hcos) / self.T_CMB \
@@ -674,7 +644,7 @@ class hm_framework:
         nx = len(ells_out)
         ells_in = np.arange(0, exp_minimal.lmax + 1)
 
-        # Temporary storage. CEV: nMasses is the # of steps for the mass integral, given by user at init.
+        # Temporary storage.
         itgnd_1h_cross = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         itgnd_1h_SN = np.zeros([nx, hm_minimal.nMasses]) + 0j 
         # For term one where QE acts simply on profiles
@@ -707,7 +677,7 @@ class hm_framework:
             # CEV: prepare for mass integral over CIB profile.
             u = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                              hm_minimal.uk_profiles['nfw'][i, j])(ells_in)
-            # CEV: TODO: understand this u factors.
+
             u_cen = hm_minimal.CIB_central_filter[:, i, j]  # Centrals come with a factor of u^0
             u_sat = hm_minimal.CIB_satellite_filter[:, i, j] * u
             if m > exp_minimal.massCut:
@@ -731,7 +701,7 @@ class hm_framework:
                     np.trapz(itgnd_I_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.I_consistency[i])
         # Mass integral over galaxy profile that will go into QE.
         int_over_M_of_g = pk_of_l * (
-                    np.trapz(itgnd_g_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.g_consistency[i]) # CEV: g_consistency = 0 if gal_consistency = False.
+                    np.trapz(itgnd_g_for_2hbispec, hm_minimal.ms, axis=-1) + hm_minimal.g_consistency[i]) 
 
 
         # M integral.
@@ -755,7 +725,6 @@ class hm_framework:
             g = tls.pkToPell(hm_minimal.comoving_radial_distance[i],
                                hm_minimal.ks, hm_minimal.uk_profiles['nfw'][i, j])(ells_in)
 
-            # CEV: TODO: understand why it needs to be conjugated.
             Galfft = Gal / hm_minimal.hods[survey_name]['ngal'][i]
             Galfft = np.nan_to_num(Galfft)
             gfft = g / hm_minimal.hods[survey_name]['ngal'][i]
@@ -776,7 +745,6 @@ class hm_framework:
                 if m > exp_minimal.massCut:
                     u_sat_damp = 0
 
-                # CEV: me
                 Gal_damp = tls.pkToPell(hm_minimal.comoving_radial_distance[i], hm_minimal.ks,
                                         hm_minimal.uk_profiles['nfw'][i, j]
                                         * (1 - np.exp(-(hm_minimal.ks / hm_minimal.p['kstar_damping']))))(ells_out)
@@ -790,7 +758,7 @@ class hm_framework:
                 gfft_damp = g_damp / hm_minimal.hods[survey_name]['ngal'][i] 
                 gfft_damp = np.nan_to_num(gfft_damp)
 
-                # CEV: ASK: Anton why he doesn't damp u_cen.
+
                 phicfft_ucen_g_damp = QE(u_cen, gfft_damp)
                 phicfft_usat_g_damp = QE(u_sat_damp, gfft_damp)
                 phicfft_ucen_g_damp_SN = QE(u_cen, np.ones_like(gfft_damp))
@@ -798,9 +766,6 @@ class hm_framework:
                 phicfft_1_damp = (phicfft_ucen_g_damp + phicfft_usat_g_damp)
                 phicfft_1_damp_SN = (phicfft_ucen_g_damp_SN + phicfft_usat_g_damp_SN)
             else:
-                # galfft_damp = galfft;
-                # phicfft_ucen_usat_damp = phicfft_ucen_usat;
-                # phicfft_usat_usat_damp = phicfft_usat_usat
 
                 Galfft_damp = Galfft
                 phicfft_1_damp = phicfft_1
@@ -832,9 +797,9 @@ class hm_framework:
         # 1h
         oneH_cross_at_i = np.trapz(itgnd_1h_cross, hm_minimal.ms, axis=-1)
         oneH_SN_at_i = np.trapz(itgnd_1h_SN, hm_minimal.ms, axis=-1)
-        # 2h CEV: strange way of doing it but ok.
+        # 2h 
         thoH_cross_1_1 = np.trapz(itgnd_2h_1_1g, hm_minimal.ms, axis=-1)
-        # CEV: TODO: understand how this consistency is applied in general. Make sure it's applied consistently.
+        
         twoH_cross_at_i = np.trapz(itgnd_2h_1_2g, hm_minimal.ms, axis=-1) * (thoH_cross_1_1 + hm_minimal.g_consistency[i]) * pk_of_L \
                           + np.trapz(itgnd_2h_y_Gg, hm_minimal.ms, axis=-1) + np.trapz(itgnd_2h_g_yG, hm_minimal.ms, axis=-1)
         twoH_SN_at_i = np.trapz(itgnd_2h_y_Gg_SN, hm_minimal.ms, axis=-1)
